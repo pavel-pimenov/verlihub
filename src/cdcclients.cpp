@@ -197,7 +197,7 @@ namespace nVerliHub {
 
 				if (mParser.mVersRE.PartFound(eVP_BUILDINFO)) {
 					mParser.mVersRE.Extract(eVP_BUILDVER, str, str);
-					ver.append(".");
+					ver.append(1, '.');
 					ver.append(str);
 				}
 

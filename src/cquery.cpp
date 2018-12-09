@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2017 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -50,10 +50,10 @@ int cQuery::Query()
 {
 	string qstr(mOS.str());
 	syslog(LOG_INFO,"[%s] Query [%s]",__FILE__, qstr.c_str());
-	if(Log(3)) LogStream() << "Execute query ~" << qstr << "~" << endl;
+	if(Log(3)) LogStream() << "Execute query ~" << qstr << '~' << endl;
 	if(mysql_query(mMySQL.mDBHandle, qstr.c_str()))
 	{
-		if(ErrLog(1)) LogStream() << "Error in query ~" << qstr << "~" << endl;
+		if(ErrLog(1)) LogStream() << "Error in query ~" << qstr << '~' << endl;
 		mMySQL.Error(2,string("Query error:"));
 		return -1;
 	}

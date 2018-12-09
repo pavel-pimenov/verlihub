@@ -146,13 +146,13 @@ void ExpandPath(string &Path)
 			free(cPath);
 		#endif
 
-		Path += "/" + tmp.substr(2, tmp.length());
+		Path += '/' + tmp.substr(2, tmp.length());
 	}
 
 	size_t pos;
 
 	#if ! defined _WIN32
-		pos = Path.find("~");
+		pos = Path.find('~');
 
 		if (pos != Path.npos) {
 			Path.replace(pos, 2, getenv("HOME"));
@@ -169,13 +169,13 @@ void ExpandPath(string &Path)
 	int len = Path.length();
 
 	if (Path.substr(len - 1, len) != "/")
-		Path.append("/");
+		Path.append(1, '/');
 }
 
 void GetPath(const string &FileName, string &Path, string &File)
 {
 	Path = FileName;
-	size_t i = FileName.rfind("/");
+	size_t i = FileName.rfind('/');
 	if(i != string::npos)
 		Path = FileName.substr(0, i+1);
 	File = FileName.substr(i+1);
@@ -198,7 +198,7 @@ void ReplaceVarInString(const string& src ,const string &varname, string &dest, 
 	syslog(LOG_INFO,"ReplaceVarInString src=[%s] varname=[%s] dest=[%s] by=[%s] ",src.c_str(),varname.c_str(),dest.c_str(),by.c_str());
 	string searchvar("%[");
 	searchvar+=varname;
-	searchvar+="]";
+	searchvar+=']';
 	dest = src;
 	size_t pos = dest.find(searchvar);
 	while (pos != dest.npos)
@@ -265,7 +265,7 @@ string convertByte(__int64 byte, bool UnitSec)
 
 	ostringstream os(ostringstream::out);
 	os.precision(2);
-	os << fixed << lByte << " ";
+	os << fixed << lByte << ' ';
 
 	if (UnitSec) {
 		if (unit >= (sizeof(byteSecUnit) / sizeof(char*)))
@@ -274,7 +274,7 @@ string convertByte(__int64 byte, bool UnitSec)
 			os << byteSecUnit[unit];
 	} else {
 		if (unit >= (sizeof(byteUnit) / sizeof(char*)))
-			os << "X";
+			os << 'X';
 		else
 			os << byteUnit[unit];
 	}
@@ -344,7 +344,7 @@ string StrByteList(const string &data, const string &sep)
 
 	for (unsigned i = 0; i < data.size(); ++i) {
 		if (i > 0)
-			res.append(" ");
+			res.append(1, ' ');
 
 		res.append(StringFrom(int(data[i])));
 	}
