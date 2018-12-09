@@ -515,7 +515,7 @@ void cBanList::Num2Ip(unsigned long mask, string &ip)
 	os << int(i[1]) << '.';
 	os << int(i[0]);
 	ip = os.str();
-	syslog(LOG_INFO,"[%s] Num2IP [%u][%s]",__FILE__, mask,ip.c_str());
+	syslog(LOG_INFO,"[%s] Num2IP [%u][%s]",__FILE__, unsigned(mask),ip.c_str());
 }
 
 void cBanList::AddNickTempBan(const string &nick, long until, const string &reason, unsigned bantype)
