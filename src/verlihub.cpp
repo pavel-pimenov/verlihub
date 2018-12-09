@@ -38,6 +38,7 @@
 #include "i18n.h"
 #include "dirsettings.h"
 #include <getopt.h>
+#include <syslog.h>
 
 using namespace std;
 using namespace nVerliHub;
@@ -117,6 +118,8 @@ int main(int argc, char *argv[])
 	int port = 0;
 	int verbosity = 0;
 
+	openlog("verlihub-debug", LOG_PID, LOG_USER);
+	syslog(LOG_INFO,"Verlihub +1");
 	const char* short_options = "Ss:d:v";
 
 	const struct option long_options[] = {
@@ -170,6 +173,7 @@ int main(int argc, char *argv[])
 
 		if (!GetCurrentDirectory(BUFSIZE, Buffer)) {
 			MAIN_LOG_ERROR << "Unable to get current directory because: " << GetLastError() << endl;
+			closelog();
 			return 1;
 		}
 
@@ -224,11 +228,14 @@ int main(int argc, char *argv[])
 
 		server.StartListening(port);
 		result = server.run(); // run the main loop until it stops itself
+		syslog(LOG_INFO,"verlihub -1");
+		closelog();
 		return result;
 	}
 	catch (const char *exception)
 	{
 		MAIN_LOG_ERROR << exception << endl;
+		closelog();
 		return 3;
 	}
 }

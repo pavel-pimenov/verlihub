@@ -22,6 +22,8 @@
 #include "clog.h"
 #include "ctime.h"
 #include <iostream>
+#include <syslog.h>
+
 using namespace std;
 
 #ifndef left
@@ -44,15 +46,18 @@ namespace nVerliHub {
 cObj::cObj(const char *name) : mClassName(name), mToLog(&cout)
 {
 	msCounterObj++;//cout << "Constructor cObj(char*), count = " << msCounterObj << endl;
+	syslog(LOG_INFO,"+cObj [%s]", mClassName);
 }
 
 cObj::cObj(): mClassName("Obj"), mToLog(&cout)
 {
+	syslog(LOG_INFO,"+cObj [%s]", mClassName);
 	msCounterObj++;//cout << "Constructor cObj(), count = " << msCounterObj << endl;
 }
 
 cObj::~cObj()
 {
+	syslog(LOG_INFO,"~cObj [%s]", mClassName);
 	msCounterObj--;//cout << "Destructor cObj, count = " << msCounterObj << endl;
 }
 

@@ -485,6 +485,7 @@ void cBanList::List(ostream &os, int count)
 
 unsigned long cBanList::Ip2Num(const string &ip)
 {
+	syslog(LOG_INFO,"[%s] ip2Num [%s]",__FILE__, ip.c_str());
 	unsigned long a = 0, b = 0, c = 0, d = 0;
 
 	if (sscanf(ip.c_str(), "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4)
@@ -514,6 +515,7 @@ void cBanList::Num2Ip(unsigned long mask, string &ip)
 	os << int(i[1]) << ".";
 	os << int(i[0]);
 	ip = os.str();
+	syslog(LOG_INFO,"[%s] Num2IP [%u][%s]",__FILE__, mask,ip.c_str());
 }
 
 void cBanList::AddNickTempBan(const string &nick, long until, const string &reason, unsigned bantype)

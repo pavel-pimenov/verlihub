@@ -48,16 +48,19 @@ namespace nVerliHub {
 
 int StrCompare(const string &str1, int start, int count, const string &str2)
 {
+//	syslog(LOG_INFO,"[%s] StrCompare1 [%s] [%s] start = %d count = %d",__FILE__, str1.c_str(),str2.c_str(),start,count);
 	return str1.compare(start, count, str2);
 }
 
 int StrCompare(const string &str1, int start, int count, const char *str2)
 {
+//	syslog(LOG_INFO,"[%s] StrCompare2 [%s] [%s] start = %d count = %d",__FILE__, str1.c_str(),str2,start,count);
 	return str1.compare(start, count, str2);
 }
 
 string toLower(const string &str)
 {
+	syslog(LOG_INFO,"[%s] toLower [%s]",__FILE__, str.c_str());
 	string result = str;
 	transform(str.begin(), str.end(), result.begin(), ::tolower);
 	return result;
@@ -65,6 +68,7 @@ string toLower(const string &str)
 
 string toUpper(const string &str)
 {
+	syslog(LOG_INFO,"[%s] toUpper [%s]",__FILE__, str.c_str());
 	string result = str;
 	transform(str.begin(), str.end(), result.begin(), ::toupper);
 	return result;
@@ -78,12 +82,14 @@ void ShrinkStringToFit(string &str)
 
 void StrCutLeft(string &str, size_t cut)
 {
+	syslog(LOG_INFO,"[%s] StrCutLeft [%s]",__FILE__, str.c_str());
 	if(cut > str.length()) cut = str.length();
 	std::string(str, cut, str.size() - cut).swap(str);
 }
 
 void StrCutLeft(const string &str1, string &str2, size_t cut)
 {
+	syslog(LOG_INFO,"[%s] StrCutLeft [%s] [%s]",__FILE__, str1.c_str(),str2.c_str());
 	if(cut > str1.size()) cut = str1.size();
 	std::string(str1, cut, str1.size() - cut).swap(str2);
 }
@@ -187,8 +193,9 @@ void FilterPath(string &Path)
 /*!
     \fn ReplaceVarInString(const string&,const string &varname,string &dest, const string& by)
  */
-void ReplaceVarInString(const string&src ,const string &varname, string &dest, const string& by)
+void ReplaceVarInString(const string& src ,const string &varname, string &dest, const string& by)
 {
+	syslog(LOG_INFO,"ReplaceVarInString src=[%s] varname=[%s] dest=[%s] by=[%s] ",src.c_str(),varname.c_str(),dest.c_str(),by.c_str());
 	string searchvar("%[");
 	searchvar+=varname;
 	searchvar+="]";

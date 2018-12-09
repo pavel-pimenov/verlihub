@@ -23,6 +23,7 @@
 #include "cserverdc.h"
 #include "cpcre.h"
 #include "i18n.h"
+#include <syslog.h>
 
 namespace nVerliHub {
 	using nUtils::cPCRE;
@@ -113,6 +114,7 @@ namespace nVerliHub {
 
 	cDCClient* cDCClients::FindTag(const string &tagID)
 	{
+		syslog(LOG_INFO,"FindTag = %s",tagID.c_str());
 		iterator it;
 		cDCClient *client;
 

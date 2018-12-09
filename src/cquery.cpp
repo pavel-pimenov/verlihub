@@ -19,6 +19,7 @@
 */
 
 #include "cquery.h"
+#include <syslog.h>
 
 namespace nVerliHub {
 	namespace nMySQL {
@@ -48,6 +49,7 @@ void cQuery::Clear(void)
 int cQuery::Query()
 {
 	string qstr(mOS.str());
+	syslog(LOG_INFO,"[%s] Query [%s]",__FILE__, qstr.c_str());
 	if(Log(3)) LogStream() << "Execute query ~" << qstr << "~" << endl;
 	if(mysql_query(mMySQL.mDBHandle, qstr.c_str()))
 	{

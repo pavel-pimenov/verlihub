@@ -19,13 +19,14 @@
 
 #ifndef CLOG_H
 #define CLOG_H
+
+#include <syslog.h>
+
 #ifdef ENABLE_SYSLOG
 
 #include <ostream>
 #include <streambuf>
 #include <string>
-
-#include <syslog.h>
 
 namespace nVerliHub {
 	namespace nLog {

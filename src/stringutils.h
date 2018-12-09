@@ -22,6 +22,7 @@
 #define STRINGUTILS_H
 
 #include <string>
+#include <syslog.h>
 
 #if (!defined _WIN32) && (!defined __int64)
 #define __int64  long long
