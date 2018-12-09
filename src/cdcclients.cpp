@@ -130,6 +130,7 @@ namespace nVerliHub {
 
 	bool cDCClients::CompareDataKey(const cDCClient &D1, const cDCClient &D2)
 	{
+		syslog(LOG_INFO,"[%s] compare [%s][%s]",__FILE__, D1.mName.c_str(),D2.mName.c_str());
 		return (D1.mName == D2.mName);
 	}
 

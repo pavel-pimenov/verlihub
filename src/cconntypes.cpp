@@ -79,6 +79,7 @@ void cConnTypes::AddFields()
 
 bool cConnTypes::CompareDataKey(const cConnType &D1, const cConnType &D2)
 {
+	syslog(LOG_INFO,"[%s] compare [%s][%s]",__FILE__, D1.mIdentifier.c_str(),D2.mIdentifier.c_str());
 	return D1.mIdentifier == D2.mIdentifier;
 }
 

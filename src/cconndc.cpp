@@ -86,6 +86,8 @@ int cConnDC::Send(string &data, bool AddPipe, bool Flush)
 {
 	if (!mWritable)
 		return 0;
+	if(!data.empty())
+		syslog(LOG_INFO,"send data=[%s] addpipe = %d flush = %d", data.c_str(), int(AddPipe), int(Flush));
 
 	if (AddPipe)
 		data.append("|");
