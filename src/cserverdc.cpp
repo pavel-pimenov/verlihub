@@ -660,7 +660,10 @@ cConnDC* cServerDC::GetConnByIP(const unsigned long ip)
 
 void cServerDC::SendToAll(const string &data, int cm, int cM) // note: class range is ignored here
 {
-	string str(data);
+	syslog(LOG_INFO,"[%s]",__func__);
+	string str;
+	str.reserve(data.size() + 1); // https://github.com/Verlihub/verlihub/issues/141
+	str = data;
 	cConnDC *conn;
 	tCLIt i;
 
@@ -674,6 +677,8 @@ void cServerDC::SendToAll(const string &data, int cm, int cM) // note: class ran
 
 int cServerDC::SendToAllWithNick(const string &start, const string &end, int cm, int cM)
 {
+	syslog(LOG_INFO,"[%s]",__func__);
+
 	string str;
 	cConnDC *conn;
 	tCLIt i;
@@ -694,6 +699,8 @@ int cServerDC::SendToAllWithNick(const string &start, const string &end, int cm,
 
 int cServerDC::SendToAllWithNickVars(const string &start, const string &end, int cm, int cM)
 {
+	syslog(LOG_INFO,"[%s]",__func__);
+
 	string temp, tend;
 	cConnDC *conn;
 	tCLIt it;
@@ -739,6 +746,8 @@ int cServerDC::SendToAllWithNickVars(const string &start, const string &end, int
 
 int cServerDC::SendToAllNoNickVars(const string &msg, int cm, int cM)
 {
+	syslog(LOG_INFO,"[%s]",__func__);
+
 	string temp, tmsg;
 	cConnDC *conn;
 	tCLIt it;
@@ -783,6 +792,8 @@ int cServerDC::SendToAllNoNickVars(const string &msg, int cm, int cM)
 
 int cServerDC::SendToAllWithNickCC(const string &start, const string &end, int cm, int cM, const string &cc_zone)
 {
+	syslog(LOG_INFO,"[%s]",__func__);
+
 	string str;
 	cConnDC *conn;
 	tCLIt pos;
@@ -807,6 +818,8 @@ int cServerDC::SendToAllWithNickCC(const string &start, const string &end, int c
 
 int cServerDC::SendToAllWithNickCCVars(const string &start, const string &end, int cm, int cM, const string &cc_zone)
 {
+	syslog(LOG_INFO,"[%s]",__func__);
+
 	string str, tend;
 	cConnDC *conn;
 	tCLIt it;
@@ -854,6 +867,8 @@ int cServerDC::SendToAllWithNickCCVars(const string &start, const string &end, i
 
 unsigned int cServerDC::SearchToAll(cConnDC *conn, string &data, string &tths, bool passive, bool tth)
 {
+	syslog(LOG_INFO,"[%s]",__func__);
+
 	cConnDC *other;
 	tCLIt i;
 	unsigned int count = 0;

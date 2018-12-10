@@ -257,7 +257,7 @@ cPluginBase * cPluginManager::GetPluginByLib(const string &path)
 	tPlugins::iterator it;
 
 	for (it = mPlugins.begin(); it != mPlugins.end(); ++it) {
-		if ((*it)->GetFilename() == path)
+		if ((*it) && (*it)->GetFilename() == path)
 			return (*it)->mPlugin;
 	}
 

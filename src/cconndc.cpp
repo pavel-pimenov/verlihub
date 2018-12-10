@@ -86,11 +86,19 @@ int cConnDC::Send(string &data, bool AddPipe, bool Flush)
 {
 	if (!mWritable)
 		return 0;
-	if(!data.empty())
-		syslog(LOG_INFO,"send data=[%s] addpipe = %d flush = %d", data.c_str(), int(AddPipe), int(Flush));
+	bool is_relocate = false;
+	if(!data.empty() && AddPipe && data.capacity() == data.size())
+	{
+		syslog(LOG_INFO,"send data=[%s][capacity=%d size= %d] addpipe = %d flush = %d", data.c_str(), data.capacity(), data.size(), int(AddPipe), int(Flush));
+		is_relocate = true;
+	}
 
-	if (AddPipe)
+	if (AddPipe )
+	{
 		data.append(1, '|');
+		if(is_relocate)
+		    syslog(LOG_INFO,"send data append=[%s][capacity=%d size= %d] addpipe = %d flush = %d", data.c_str(), data.capacity(), data.size(), int(AddPipe), int(Flush));
+	}
 
 	size_t len = data.size();
 
