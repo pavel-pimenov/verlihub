@@ -150,6 +150,7 @@ public:
 	*/
 	virtual DataType *AppendData(DataType const &data)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		DataType *copy = new DataType(data);
 		mData.push_back(copy);
 		return copy;
@@ -162,6 +163,7 @@ public:
 	*/
 	virtual DataType *AddData(DataType const &data)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		DataType *copy = this->AppendData(data);
 		SetBaseTo(copy);
 		SavePK();
@@ -183,6 +185,7 @@ public:
 	*/
 	virtual void DelData(DataType &data)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		SetBaseTo(&data);
 		DeletePK();
 		iterator it;
@@ -210,6 +213,7 @@ public:
 	*/
 	virtual DataType *FindData(DataType &ByKey)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		iterator it;
 		for (it = begin(); it != end(); ++it)
 		{

@@ -49,6 +49,7 @@ public:
 
 	virtual DataType* FindDataPosition(DataType const &data, int &CurPos)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		// first adjust the CurPos, and init limits
 		int MinPos = 0;
 		int MaxPos = this->mDataIndex.size()-1;
@@ -117,6 +118,7 @@ public:
 
 	virtual DataType* AppendData(DataType const& data)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		int ExpectedPosition = this->Size();
 		this->FindDataPosition(data, ExpectedPosition);
 		DataType* pData = tMySQLMemoryList<DataType,OwnerType>::AppendData(data);
@@ -126,6 +128,8 @@ public:
 
 	virtual void DelData(DataType& data)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
+		syslog(LOG_INFO,"[%s]",__func__);
 		int ExpectedPosition = 0;
 		this->FindDataPosition(data, ExpectedPosition);
 
@@ -135,6 +139,7 @@ public:
 
 	virtual void Empty()
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		tMySQLMemoryList<DataType,OwnerType>::Empty();
 		mDataIndex.empty();
 	}
@@ -144,6 +149,7 @@ protected:
 
 	DataType *FindDataPositionLimited(const DataType &data, int MinPos, int MaxPos, int &CurPos)
 	{
+		syslog(LOG_INFO,"[%s]",__func__);
 		// compare data to last, first, middle
 		DataType *Data2 = NULL;
 		int Order;

@@ -52,6 +52,7 @@ public:
 
 	virtual DataType* AppendData(DataType const& data)
 	{
+		syslog(LOG_INFO,"hash[%s]",__func__);
 		DataType* pData = tMySQLMemoryList<DataType,OwnerType>::AppendData(data);
 		tDataHashType Hash = this->GetHash(*pData);
 		mDataHash.AddWithHash(pData, Hash);
@@ -60,6 +61,7 @@ public:
 
 	virtual void DelData(DataType& data)
 	{
+		syslog(LOG_INFO,"hash[%s]",__func__);
 		tDataHashType Hash = this->GetHash(data);
 		tMySQLMemoryList<DataType,OwnerType>::DelData(data);
 		mDataHash.RemoveByHash(Hash);
@@ -67,6 +69,7 @@ public:
 
 	virtual void Empty()
 	{
+		syslog(LOG_INFO,"hash[%s]",__func__);
 		tMySQLMemoryList<DataType,OwnerType>::Empty();
 		mDataHash.Clear();
 	}

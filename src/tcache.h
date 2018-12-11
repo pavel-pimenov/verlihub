@@ -23,6 +23,7 @@
 #include "thasharray.h"
 #include "cconfmysql.h"
 #include "ctime.h"
+#include <syslog.h>
 
 namespace nVerliHub {
 	namespace nConfig {
@@ -55,6 +56,7 @@ namespace nVerliHub {
 				tCache(nMySQL::cMySQL &mysql, const char* tableName, const char* indexName, const char* dataName = NULL) :
 					cConfMySQL(mysql), mDateName(dataName)
 				{
+					syslog(LOG_INFO,"[%s]",__func__);
 					SetClassName("tCache");
 					mMySQLTable.mName = tableName;
 					cConfMySQL::Add(indexName,mCurIdx);
@@ -107,6 +109,7 @@ namespace nVerliHub {
 				 */
 				bool Find(IndexType const &key)
 				{
+					syslog(LOG_INFO,"[%s]",__func__);
 					tCacheHash hash = CalcHash(key);
 					return mHashTab.ContainsHash(hash);
 				}
@@ -145,6 +148,7 @@ namespace nVerliHub {
 				 */
 				int LoadAll()
 				{
+					syslog(LOG_INFO,"[%s]",__func__);
 					SelectFields(mQuery.OStream());
 					db_iterator it;
 					for(it = db_begin(); it != db_end(); ++it)
@@ -176,6 +180,7 @@ namespace nVerliHub {
 				 */
 				int Update()
 				{
+					syslog(LOG_INFO,"[%s]",__func__);
 					int n = 0;
 
 					SelectFields(mQuery.OStream());
