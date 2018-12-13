@@ -214,6 +214,8 @@ void ReplaceVarInString(const string& src ,const string &varname, string &dest, 
  */
 void ReplaceVarInString(const string &src,const string &varname,string &dest, int by)
 {
+	syslog(LOG_INFO,"ReplaceVarInString2 src=[%s] varname=[%s] dest=[%s] by=[%d] ",src.c_str(),varname.c_str(),dest.c_str(),by);
+
 	ostringstream os;
 	os << by;
 	ReplaceVarInString(src, varname, dest, os.str());
@@ -225,6 +227,8 @@ void ReplaceVarInString(const string &src,const string &varname,string &dest, in
  */
 void ReplaceVarInString(const string&src,const string &varname,string &dest, double by)
 {
+	syslog(LOG_INFO,"ReplaceVarInString3 src=[%s] varname=[%s] dest=[%s] by=[%f] ",src.c_str(),varname.c_str(),dest.c_str(),by);
+
 	ostringstream os;
 	os << by;
 	ReplaceVarInString(src, varname, dest, os.str());
@@ -236,6 +240,8 @@ void ReplaceVarInString(const string&src,const string &varname,string &dest, dou
  */
 void ReplaceVarInString(const string &src,const string &varname,string &dest, long by)
 {
+	syslog(LOG_INFO,"ReplaceVarInString4 src=[%s] varname=[%s] dest=[%s] by=[%d] ",src.c_str(),varname.c_str(),dest.c_str(),int(by));
+
 	ostringstream os;
 	os << by;
 	ReplaceVarInString(src, varname, dest, os.str());
@@ -246,6 +252,8 @@ void ReplaceVarInString(const string &src,const string &varname,string &dest, lo
  */
 void ReplaceVarInString(const string &src,const string &varname,string &dest, __int64 by)
 {
+	syslog(LOG_INFO,"ReplaceVarInString5 src=[%s] varname=[%s] dest=[%s] by=[%d] ",src.c_str(),varname.c_str(),dest.c_str(),int(by));
+
 	ReplaceVarInString(src, varname, dest, StringFrom(by));
 }
 
