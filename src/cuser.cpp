@@ -33,13 +33,21 @@ namespace nVerliHub {
 	using namespace nSocket;
 	using namespace nUtils;
 	using namespace nEnums;
-	
+
+cServerDC* GetServer()
+{
+	return (cServerDC*)cServerDC::sCurrentServer;
+}
+
 cUserBase::cUserBase(const string &nick):
 	cObj("UserBase"),
 	mNick(nick),
+	mNickHash(0),
 	mClass(eUC_NORMUSER),
 	mInList(false)
-{}
+{
+	mNickHash = GetServer()->mUserList.Nick2Hash(nick);
+}
 
 bool cUserBase::CanSend()
 {
@@ -546,19 +554,18 @@ void cUser::ApplyRights(cPenaltyList::sPenalty &pen)
 
 bool cUserRobot::SendPMTo(cConnDC *conn, const string &msg)
 {
-	if (conn && conn->mpUser) {
-		string pm;
-		cDCProto::Create_PM(pm, mNick,conn->mpUser->mNick, mNick, msg);
-		pm.reserve(pm.size() + 1);
-		conn->Send(pm, true);
-		return true;
-	}
+	if (!conn || !conn->mpUser)
+		return false;
 
-	return false;
+	string pm;
+	mxServer->mP.Create_PM(pm, mNick, conn->mpUser->mNick, mNick, msg, true); // reserve for pipe
+	conn->Send(pm, true);
+	return true;
 }
 
-cChatRoom::cChatRoom(const string &nick, cUserCollection *col, cServerDC *server) :
-	cUserRobot(nick, server), mCol(col)
+cChatRoom::cChatRoom(const string &nick, cUserCollection *col, cServerDC *server):
+	cUserRobot(nick, server),
+	mCol(col)
 {
 	mConsole = new cChatConsole(mxServer, this);
 	mConsole->AddCommands();
@@ -566,8 +573,10 @@ cChatRoom::cChatRoom(const string &nick, cUserCollection *col, cServerDC *server
 
 cChatRoom::~cChatRoom()
 {
-	if (mConsole) delete mConsole;
-	mConsole = NULL;
+	if (mConsole) {
+		delete mConsole;
+		mConsole = NULL;
+	}
 }
 
 void cChatRoom::SendPMToAll(const string &data, cConnDC *conn, bool fromplug, bool skipself)
@@ -582,7 +591,7 @@ void cChatRoom::SendPMToAll(const string &data, cConnDC *conn, bool fromplug, bo
 	else
 		from = mNick;
 
-	this->mxServer->mP.Create_PMForBroadcast(start, end, mNick, from, data);
+	this->mxServer->mP.Create_PMForBroadcast(start, end, mNick, from, data, false); // dont reserve for pipe, buffer is copied before sending
 	bool temp = false;
 
 	if (skipself && conn && conn->mpUser) {
@@ -604,7 +613,7 @@ void cChatRoom::SendPMToAll(const string &data, cConnDC *conn, bool fromplug, bo
 bool cChatRoom::ReceiveMsg(cConnDC *conn, cMessageDC *msg)
 {
 	if (conn && conn->mpUser && conn->mpUser->mInList && mCol && msg && (msg->mType == eDC_TO)) {
-		bool InList = mCol->ContainsNick(conn->mpUser->mNick);
+		bool InList = mCol->ContainsHash(conn->mpUser->mNickHash);
 
 		if (InList || IsUserAllowed(conn->mpUser)) {
 			if (!InList) // auto join

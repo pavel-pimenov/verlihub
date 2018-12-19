@@ -596,18 +596,20 @@ int _GetMyINFO(lua_State *L)
 	const char *myinfo;
 	int result = 1;
 
-	if(lua_gettop(L) == 2) {
-		if(!lua_isstring(L, 2)) {
+	if (lua_gettop(L) == 2) {
+		if (!lua_isstring(L, 2)) {
 			luaerror(L, ERR_PARAM);
 			return 2;
 		}
+
 		nick = lua_tostring(L, 2);
 		myinfo = GetMyINFO(nick.c_str());
-		if(strlen(myinfo) < 1)
-		{
+
+		if (!myinfo || myinfo[0] == '\0') {
 			result = 0;
 			myinfo = "User not found";
 		}
+
 		lua_pushboolean(L, result);
 		lua_pushstring(L, myinfo);
 		return 2;
@@ -1276,13 +1278,20 @@ int _GetHostGeoIP(lua_State *L)
 
 int _GetNickList(lua_State *L)
 {
-	const char *nicklist;
 	int result = 1;
-	if(lua_gettop(L) == 1) {
-		nicklist = GetNickList();
-		if(strlen(nicklist) < 1) result = 0;
+
+	if (lua_gettop(L) == 1) {
+		const char *nicklist = GetNickList();
+
+		if (!nicklist || nicklist[0] == '\0')
+			result = 0;
+
 		lua_pushboolean(L, result);
 		lua_pushstring(L, nicklist);
+
+		if (nicklist)
+			free((void*)nicklist);
+
 		return 2;
 	} else {
 		luaL_error(L, "Error calling VH:GetNickList; expected 0 argument but got %d", lua_gettop(L) - 1);
@@ -1294,19 +1303,24 @@ int _GetNickList(lua_State *L)
 
 int _GetOPList(lua_State *L)
 {
-	const char *oplist;
 	int result = 1;
-	if(lua_gettop(L) == 1) {
+
+	if (lua_gettop(L) == 1) {
 		cServerDC *server = GetCurrentVerlihub();
-		if(server) {
-			oplist = server->mOpList.GetNickList().c_str();
-			if(strlen(oplist) < 1) result = 0;
+
+		if (server) {
+			string oplist;
+			server->mOpList.GetNickList(oplist, false);
+
+			if (oplist.empty())
+				result = 0;
+
 			lua_pushboolean(L, result);
-			lua_pushstring(L, oplist);
+			lua_pushstring(L, oplist.c_str());
 			return 2;
 		} else {
-				luaerror(L, ERR_SERV);
-				return 2;
+			luaerror(L, ERR_SERV);
+			return 2;
 		}
 	} else {
 		luaL_error(L, "Error calling VH:GetOPList; expected 0 argument but got %d", lua_gettop(L) - 1);
@@ -1318,15 +1332,20 @@ int _GetOPList(lua_State *L)
 
 int _GetBotList(lua_State *L)
 {
-	const char *botlist;
 	int result = 1;
-	if(lua_gettop(L) == 1) {
+
+	if (lua_gettop(L) == 1) {
 		cServerDC *server = GetCurrentVerlihub();
-		if(server) {
-			botlist = server->mRobotList.GetNickList().c_str();
-			if(strlen(botlist) < 1) result = 0;
+
+		if (server) {
+			string botlist;
+			server->mRobotList.GetNickList(botlist, false);
+
+			if (botlist.empty())
+				result = 0;
+
 			lua_pushboolean(L, result);
-			lua_pushstring(L, botlist);
+			lua_pushstring(L, botlist.c_str());
 			return 2;
 		} else {
 			luaerror(L, ERR_SERV);
@@ -2035,21 +2054,19 @@ int _RegBot(lua_State *L)
 		share = IntToStr(ishare);
 	}
 
+	serv->mP.Create_MyINFO(robot->mMyINFO, nick, desc, speed, email, share, false); // send myinfo, dont reserve for pipe, we are not sending this
 	string data;
-
-	serv->mP.Create_MyINFO(robot->mMyINFO, nick, desc, speed, email, share); // send myinfo
-	robot->mMyINFO_basic = robot->mMyINFO;
-	data.reserve(robot->mMyINFO.size() + 1);
+	data.reserve(robot->mMyINFO.size() + 1); // first use, reserve for pipe
 	data = robot->mMyINFO;
-	serv->MyINFOToUsers(data, false);
+	serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
-	if (robot->mClass >= serv->mC.oplist_class) { // send short oplist
-		serv->mP.Create_OpList(data, nick);
-		serv->MyINFOToUsers(data);
+	if (robot->mClass >= serv->mC.oplist_class) { // send short oplist, reserve for pipe
+		serv->mP.Create_OpList(data, nick, true);
+		serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 	}
 
-	serv->mP.Create_BotList(data, nick); // send short botlist
-	serv->MyINFOToUsers(data, true, true);
+	serv->mP.Create_BotList(data, nick, true); // send short botlist, reserve for pipe
+	serv->mUserList.SendToAllWithFeature(data, eSF_BOTLIST, serv->mC.delayed_myinfo, true);
 
 	li->addBot(nick.c_str(), robot->mMyINFO.c_str(), ishare, iclass); // add to lua bots
 	lua_pushboolean(L, 1);
@@ -2155,42 +2172,44 @@ int _EditBot(lua_State *L)
 
 	if (robot->mClass != iclass) { // different class
 		if ((robot->mClass < serv->mC.opchat_class) && (iclass >= serv->mC.opchat_class)) { // add to opchat list
-			if (!serv->mOpchatList.ContainsNick(nick))
-				serv->mOpchatList.Add(robot);
+			if (!serv->mOpchatList.ContainsHash(robot->mNickHash))
+				serv->mOpchatList.AddWithHash(robot, robot->mNickHash);
 
 		} else if ((robot->mClass >= serv->mC.opchat_class) && (iclass < serv->mC.opchat_class)) { // remove from opchat list
-			if (serv->mOpchatList.ContainsNick(nick))
-				serv->mOpchatList.Remove(robot);
+			if (serv->mOpchatList.ContainsHash(robot->mNickHash))
+				serv->mOpchatList.RemoveByHash(robot->mNickHash);
 		}
 
 		if ((robot->mClass < serv->mC.oplist_class) && (iclass >= serv->mC.oplist_class)) { // changing from user to op
-			if (!serv->mOpList.ContainsNick(nick)) { // add to oplist
-				serv->mOpList.Add(robot);
+			if (!serv->mOpList.ContainsHash(robot->mNickHash)) { // add to oplist
+				serv->mOpList.AddWithHash(robot, robot->mNickHash);
 
-				serv->mP.Create_OpList(data, nick); // send short oplist
-				serv->MyINFOToUsers(data);
+				serv->mP.Create_OpList(data, nick, true); // send short oplist, reserve for pipe
+				serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 			}
 
 		} else if ((robot->mClass >= serv->mC.oplist_class) && (iclass < serv->mC.oplist_class)) { // changing from op to user
-			if (serv->mOpList.ContainsNick(nick)) { // remove from oplist
-				serv->mOpList.Remove(robot);
+			if (serv->mOpList.ContainsHash(robot->mNickHash)) { // remove from oplist
+				serv->mOpList.RemoveByHash(robot->mNickHash);
 
-				serv->mP.Create_Quit(data, nick); // send quit
-				serv->MyINFOToUsers(data);
+				serv->mP.Create_Quit(data, nick, true); // send quit, reserve for pipe
+				serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
-				serv->mP.Create_BotList(data, nick); // send short botlist after quit
-				serv->MyINFOToUsers(data, true, true);
+				serv->mP.Create_BotList(data, nick, true); // send short botlist after quit, reserve for pipe
+				serv->mUserList.SendToAllWithFeature(data, eSF_BOTLIST, serv->mC.delayed_myinfo, true);
 			}
 		}
 
 		robot->mClass = (tUserCl)iclass; // set new class
 	}
 
-	serv->mP.Create_MyINFO(robot->mMyINFO, nick, desc, speed, email, share); // send new myinfo after quit
-	robot->mMyINFO_basic = robot->mMyINFO;
-	data.reserve(robot->mMyINFO.size() + 1);
+	serv->mP.Create_MyINFO(robot->mMyINFO, nick, desc, speed, email, share, false); // send new myinfo after quit, dont reserve for pipe, we are not sending this
+
+	if (data.capacity() < (robot->mMyINFO.size() + 1)) // reserve for pipe
+		data.reserve(robot->mMyINFO.size() + 1);
+
 	data = robot->mMyINFO;
-	serv->MyINFOToUsers(data, false);
+	serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
 	li->editBot(nick.c_str(), robot->mMyINFO.c_str(), ishare, iclass); // edit in lua bots
 	lua_pushboolean(L, 1);
@@ -2690,13 +2709,13 @@ int _AddChatUser(lua_State *L)
 	string nick = lua_tostring(L, 2);
 	cUser *user = serv->mUserList.GetUserByNick(nick);
 
-	if (!user || !user->mxConn || !user->mxConn->mpUser) {
+	if (!user || !user->mxConn) {
 		luaerror(L, "User not found");
 		return 2;
 	}
 
-	if (!serv->mChatUsers.ContainsNick(user->mxConn->mpUser->mNick)) {
-		serv->mChatUsers.Add(user->mxConn->mpUser);
+	if (!serv->mChatUsers.ContainsHash(user->mNickHash)) {
+		serv->mChatUsers.AddWithHash(user, user->mNickHash);
 		lua_pushboolean(L, 1);
 		lua_pushnil(L);
 	} else {
@@ -2730,13 +2749,13 @@ int _DelChatUser(lua_State *L)
 	string nick = lua_tostring(L, 2);
 	cUser *user = serv->mUserList.GetUserByNick(nick);
 
-	if (!user || !user->mxConn || !user->mxConn->mpUser) {
+	if (!user || !user->mxConn) {
 		luaerror(L, "User not found");
 		return 2;
 	}
 
-	if (serv->mChatUsers.ContainsNick(user->mxConn->mpUser->mNick)) {
-		serv->mChatUsers.Remove(user->mxConn->mpUser);
+	if (serv->mChatUsers.ContainsHash(user->mNickHash)) {
+		serv->mChatUsers.RemoveByHash(user->mNickHash);
 		lua_pushboolean(L, 1);
 		lua_pushnil(L);
 	} else {
@@ -2770,12 +2789,12 @@ int _IsChatUser(lua_State *L)
 	string nick = lua_tostring(L, 2);
 	cUser *user = serv->mUserList.GetUserByNick(nick);
 
-	if (!user || !user->mxConn || !user->mxConn->mpUser) {
+	if (!user || !user->mxConn) {
 		luaerror(L, "User not found");
 		return 2;
 	}
 
-	if (serv->mChatUsers.ContainsNick(user->mxConn->mpUser->mNick)) {
+	if (serv->mChatUsers.ContainsHash(user->mNickHash)) {
 		lua_pushboolean(L, 1);
 	} else {
 		lua_pushboolean(L, 0);
@@ -2942,7 +2961,7 @@ int _SetTopic(lua_State *L)
 
 	string topic = lua_tostring(L, 2);
 	string omsg;
-	cDCProto::Create_HubName(omsg, serv->mC.hub_name, topic);
+	serv->mP.Create_HubName(omsg, serv->mC.hub_name, topic, false); // dont reserve for pipe, buffer is copied before adding pipe
 	serv->SendToAll(omsg, eUC_NORMUSER, eUC_MASTER);
 	SetConfig(li->mConfigName.c_str(), "hub_topic", topic.c_str());
 	lua_pushboolean(L, 1);

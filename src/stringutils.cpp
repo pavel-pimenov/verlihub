@@ -314,6 +314,19 @@ __int64 StringAsLL(const string &str)
 	#endif
 }
 
+bool IsNumber(const char *num)
+{
+	if (!num || (num[0] == '\0'))
+		return false;
+
+	for (unsigned int pos = 0; num[pos]; pos++) {
+		if (!isdigit(num[pos]))
+			return false;
+	}
+
+	return true;
+}
+
 unsigned int CountLines(const string &str)
 {
 	unsigned int lines = 1;

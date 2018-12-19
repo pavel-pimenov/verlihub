@@ -23,6 +23,7 @@
 
 #include <string>
 #include <syslog.h>
+#include <cstring>
 
 #if (!defined _WIN32) && (!defined __int64)
 	#define __int64 long long
@@ -52,13 +53,14 @@ void ReplaceVarInString(const string &src,const string &var,string &dest, __int6
 string convertByte(__int64 byte, bool UnitSec = false);
 string StringFrom(__int64 const &val);
 __int64 StringAsLL(const string &);
+bool IsNumber(const char *num);
 unsigned int CountLines(const string &);
 bool LimitLines(const string &str, int max);
 string StrByteList(const string &data, const string &sep = " ");
 
 inline void AppendReservePlusPipe(string &dest, string &data, const bool pipe)
 {
-	if (pipe)
+	if (pipe) // must always be already reserved for pipe
 		data.append(1, '|');
 
 	dest.reserve(dest.size() + data.size());

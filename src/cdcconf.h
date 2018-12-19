@@ -25,22 +25,22 @@
 #include "cdctag.h"
 
 using std::string;
-namespace  nVerliHub {
 
+namespace nVerliHub {
 	namespace nProtocol {
 		class cDCProto;
 	};
+
 	using nProtocol::cDCProto;
 	class cDCBanList;
 	class cDCConsole;
+
 	namespace nSocket {
 		class cConnDC;
 		class cServerDC;
 	};
 
-
 namespace nTables {
-
 	class cDCBanList;
 
 /**dc configuration
@@ -114,8 +114,6 @@ public:
 	unsigned int max_chat_lines;
 	unsigned int max_flood_counter_pm;
 	unsigned int max_flood_counter_mcto;
-	bool nicklist_on_login;
-	bool delayed_login;
 	bool delayed_search;
 	bool delayed_myinfo; // implies also delayed quit
 	bool drop_invalid_key;
@@ -178,7 +176,6 @@ public:
 	int max_class_same_user;
 	bool hide_all_kicks;
 	int notify_kicks_to_all;
-	bool optimize_userlist;
 	bool use_search_filter;
 	bool filter_lan_requests;
 	bool hide_msg_badctm;
@@ -288,7 +285,6 @@ public:
 	int topic_mod_class;
 	int mainchat_class;
 	int private_class;
-	unsigned int ul_portion;
 	string ip_zone4_min;
 	string ip_zone4_max;
 	string ip_zone5_min;
@@ -312,7 +308,7 @@ public:
 	double tag_min_version;
 	double tag_max_version;
 	string cc_zone[3];
-	int show_tags; // 0 - no at all, 1 - only to ops, 2 - show to everyone
+	bool show_tags;
 	int show_desc_len; // cut first x bytes of description, -1 means disabled
 	int autoreg_class; // todo: change to unsigned
 	int autounreg_class;
@@ -352,7 +348,7 @@ public:
 	bool desc_insert_mode;
 	string desc_insert_vars;
 public: // Public attributes
-	nSocket::cServerDC & mS;
+	nSocket::cServerDC &mS;
 };
 
 	}; // nmaespace nTables

@@ -52,7 +52,7 @@ cUser* GetUser(const char *nick)
 		return NULL;
 	}
 
-	cUser *user = serv->mUserList.GetUserByNick(string(nick));
+	cUser *user = serv->mUserList.GetUserByNick(nick);
 	return user; // user without connection, a bot, must be returned as well, its up to the call to check for connection
 }
 
@@ -193,7 +193,7 @@ bool SendPMToAll(const char *data, const char *from, int min_class, int max_clas
 	}
 
 	string start, end;
-	serv->mP.Create_PMForBroadcast(start, end, from, from, data);
+	serv->mP.Create_PMForBroadcast(start, end, from, from, data, false); // dont reserve for pipe, buffer is copied before sending
 	serv->SendToAllWithNick(start, end, min_class, max_class);
 	return true;
 }
@@ -211,8 +211,7 @@ bool SendToChat(const char *nick, const char *text, int min_class, int max_class
 	}
 
 	string omsg;
-	serv->mP.Create_Chat(omsg, nick, text);
-	omsg.reserve(omsg.size() + 1);
+	serv->mP.Create_Chat(omsg, nick, text, true); // reserve for pipe
 	serv->mChatUsers.SendToAllWithClass(omsg, min_class, max_class, serv->mC.delayed_chat, true);
 	return true;
 }
@@ -231,7 +230,7 @@ bool SendToOpChat(const char *data, const char *nick)
 
 	cUser *user = NULL;
 
-	if (nick && strlen(nick))
+	if (nick && (nick[0] != '\0'))
 		user = GetUser(nick);
 
 	serv->mOpChat->SendPMToAll(data, (user ? user->mxConn : NULL), true, false);
@@ -555,13 +554,17 @@ unsigned __int64 GetTotalShareSize()
 	return server->mTotalShare;
 }
 
-const char *__GetNickList()
+const char* __GetNickList()
 {
 	cServerDC *server = GetCurrentVerlihub();
-	if(server)
-	{
-		return server->mUserList.GetNickList().c_str();
-	} else return "";
+
+	if (server) {
+		string list;
+		server->mUserList.GetNickList(list, false);
+		return strdup(list.c_str());
+	}
+
+	return "";
 }
 
 const char * GetVHCfgDir()
@@ -639,14 +642,14 @@ bool AddRegUser(const char *nick, int clas, const char *pass, const char* op)
 	cConnDC *conn = NULL;
 	cUser *user = NULL;
 
-	if (strlen(op)) {
+	if (op && (op[0] != '\0')) {
 		user = GetUser(op);
 
 		if (user && user->mxConn)
 			conn = user->mxConn;
 	}
 
-	bool res = serv->mR->AddRegUser(nick, conn, clas, (strlen(pass) ? pass : NULL));
+	bool res = serv->mR->AddRegUser(nick, conn, clas, (pass && (pass[0] != '\0')) ? pass : NULL);
 	user = GetUser(nick);
 
 	if (res && user && user->mxConn) { // no need to reconnect for class to take effect
@@ -656,14 +659,14 @@ bool AddRegUser(const char *nick, int clas, const char *pass, const char* op)
 		serv->DCPrivateHS(ostr.str(), user->mxConn);
 		serv->DCPublicHS(ostr.str(), user->mxConn);
 
-		if ((clas >= serv->mC.opchat_class) && !serv->mOpchatList.ContainsNick(user->mNick)) // opchat list
-			serv->mOpchatList.Add(user);
+		if ((clas >= serv->mC.opchat_class) && !serv->mOpchatList.ContainsHash(user->mNickHash)) // opchat list
+			serv->mOpchatList.AddWithHash(user, user->mNickHash);
 
-		if ((clas >= serv->mC.oplist_class) && !serv->mOpList.ContainsNick(user->mNick)) { // oplist
-			serv->mOpList.Add(user);
+		if ((clas >= serv->mC.oplist_class) && !serv->mOpList.ContainsHash(user->mNickHash)) { // oplist
+			serv->mOpList.AddWithHash(user, user->mNickHash);
 
-			serv->mP.Create_OpList(data, user->mNick); // send short oplist
-			serv->MyINFOToUsers(data);
+			serv->mP.Create_OpList(data, user->mNick, true); // send short oplist, reserve for pipe
+			serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 		}
 
 		user->mClass = tUserCl(clas);
@@ -701,25 +704,23 @@ bool DelRegUser(const char *nick)
 		serv->DCPrivateHS(_("You have been unregistered."), user->mxConn);
 		serv->DCPublicHS(_("You have been unregistered."), user->mxConn);
 
-		if (serv->mOpchatList.ContainsNick(user->mNick)) // opchat list
-			serv->mOpchatList.Remove(user);
+		if (serv->mOpchatList.ContainsHash(user->mNickHash)) // opchat list
+			serv->mOpchatList.RemoveByHash(user->mNickHash);
 
-		if (serv->mOpList.ContainsNick(user->mNick)) { // oplist, only if user is there
-			serv->mOpList.Remove(user);
+		if (serv->mOpList.ContainsHash(user->mNickHash)) { // oplist, only if user is there
+			serv->mOpList.RemoveByHash(user->mNickHash);
 
-			serv->mP.Create_Quit(data, user->mNick); // send quit to all
-			serv->MyINFOToUsers(data);
+			serv->mP.Create_Quit(data, user->mNick, true); // send quit to all, reserve for pipe
+			serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
-			data.reserve(user->mMyINFO.size() + 1); // send myinfo to all
+			if (data.capacity() < (user->mMyINFO.size() + 1)) // send myinfo to all, reserve for pipe
+				data.reserve(user->mMyINFO.size() + 1);
+
 			data = user->mMyINFO;
-			serv->MyINFOToUsers(data, false);
+			serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
 			if (serv->mC.send_user_ip) { // send userip to operators
-				data.clear();
-				cCompositeUserCollection::ufDoIpList DoUserIP(data);
-				DoUserIP.Clear();
-				DoUserIP(user);
-				data.reserve(data.size() + 1);
+				serv->mP.Create_UserIP(data, user->mNick, user->mxConn->AddrIP(), true); // reserve for pipe
 				serv->mUserList.SendToAllWithClassFeature(data, serv->mC.user_ip_class, eUC_MASTER, eSF_USERIP2, serv->mC.delayed_myinfo, true); // must be delayed too
 			}
 		}
@@ -767,39 +768,37 @@ bool SetRegClass(const char *nick, int clas)
 		serv->DCPublicHS(ostr.str(), user->mxConn);
 
 		if ((user->mClass < serv->mC.opchat_class) && (clas >= serv->mC.opchat_class)) { // opchat list
-			if (!serv->mOpchatList.ContainsNick(user->mNick))
-				serv->mOpchatList.Add(user);
+			if (!serv->mOpchatList.ContainsHash(user->mNickHash))
+				serv->mOpchatList.AddWithHash(user, user->mNickHash);
 
 		} else if ((user->mClass >= serv->mC.opchat_class) && (clas < serv->mC.opchat_class)) {
-			if (serv->mOpchatList.ContainsNick(user->mNick))
-				serv->mOpchatList.Remove(user);
+			if (serv->mOpchatList.ContainsHash(user->mNickHash))
+				serv->mOpchatList.RemoveByHash(user->mNickHash);
 		}
 
 		if ((user->mClass < serv->mC.oplist_class) && (clas >= serv->mC.oplist_class)) { // oplist
-			if (!ui.mHideKeys && !serv->mOpList.ContainsNick(user->mNick)) {
-				serv->mOpList.Add(user);
+			if (!ui.mHideKeys && !serv->mOpList.ContainsHash(user->mNickHash)) {
+				serv->mOpList.AddWithHash(user, user->mNickHash);
 
-				serv->mP.Create_OpList(data, user->mNick); // send short oplist
-				serv->MyINFOToUsers(data);
+				serv->mP.Create_OpList(data, user->mNick, true); // send short oplist, reserve for pipe
+				serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 			}
 
 		} else if ((user->mClass >= serv->mC.oplist_class) && (clas < serv->mC.oplist_class)) {
-			if (!ui.mHideKeys && serv->mOpList.ContainsNick(user->mNick)) {
-				serv->mOpList.Remove(user);
+			if (!ui.mHideKeys && serv->mOpList.ContainsHash(user->mNickHash)) {
+				serv->mOpList.RemoveByHash(user->mNickHash);
 
-				serv->mP.Create_Quit(data, user->mNick); // send quit to all
-				serv->MyINFOToUsers(data);
+				serv->mP.Create_Quit(data, user->mNick, true); // send quit to all, reserve for pipe
+				serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
-				data.reserve(user->mMyINFO.size() + 1); // send myinfo to all
+				if (data.capacity() < (user->mMyINFO.size() + 1)) // send myinfo to all, reserve for pipe
+					data.reserve(user->mMyINFO.size() + 1);
+
 				data = user->mMyINFO;
-				serv->MyINFOToUsers(data, false);
+				serv->mUserList.SendToAll(data, serv->mC.delayed_myinfo, true);
 
 				if (serv->mC.send_user_ip) { // send userip to operators
-					data.clear();
-					cCompositeUserCollection::ufDoIpList DoUserIP(data);
-					DoUserIP.Clear();
-					DoUserIP(user);
-					data.reserve(data.size() + 1);
+					serv->mP.Create_UserIP(data, user->mNick, user->mxConn->AddrIP(), true); // reserve for pipe
 					serv->mUserList.SendToAllWithClassFeature(data, serv->mC.user_ip_class, eUC_MASTER, eSF_USERIP2, serv->mC.delayed_myinfo, true); // must be delayed too
 				}
 			}
@@ -881,7 +880,9 @@ bool CheckDataPipe(string &data)
 	if (data.size() && (data[data.size() - 1] == '|'))
 		return false;
 
-	data.reserve(data.size() + 1);
+	if (data.capacity() < (data.size() + 1)) // reserve for pipe
+		data.reserve(data.size() + 1);
+
 	return true;
 }
 
@@ -890,7 +891,8 @@ extern "C" {
 	{
 		return __GetUsersCount();
 	}
-	const char *GetNickList()
+
+	const char* GetNickList()
 	{
 		return __GetNickList();
 	}

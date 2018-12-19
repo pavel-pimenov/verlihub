@@ -193,24 +193,26 @@ void cLuaInterpreter::Load()
 
 void cLuaInterpreter::ReportLuaError(const char *error)
 {
-	if (cpiLua::me && (cpiLua::me->log_level > 0)) {
-		cServerDC *serv = cServerDC::sCurrentServer;
+	if (!cpiLua::me || (cpiLua::me->log_level == 0))
+		return;
 
-		if (serv) {
-			string toall = _("Lua error");
-			toall.append(": ");
+	cServerDC *serv = cServerDC::sCurrentServer;
 
-			if (error)
-				toall.append(error);
-			else
-				toall.append(_("Unknown error"));
+	if (!serv)
+		return;
 
-			string start, end;
-			serv->mP.Create_PMForBroadcast(start, end, serv->mC.opchat_name, serv->mC.opchat_name, toall);
-			serv->SendToAllWithNick(start, end, cpiLua::me->err_class, eUC_MASTER); // use err_class here
-			cpiLua::me->ReportLuaError(toall); // also write to err file
-		}
-	}
+	string toall(_("Lua error"));
+	toall.append(": ");
+
+	if (error)
+		toall.append(error);
+	else
+		toall.append(_("Unknown error"));
+
+	string start, end;
+	serv->mP.Create_PMForBroadcast(start, end, serv->mC.opchat_name, serv->mC.opchat_name, toall, false); // dont reserve for pipe, buffer is copied before adding pipe
+	serv->SendToAllWithNick(start, end, cpiLua::me->err_class, eUC_MASTER); // use err_class here
+	cpiLua::me->ReportLuaError(toall); // also write to err file
 }
 
 void cLuaInterpreter::RegisterFunction(const char *func, int (*ptr)(lua_State*))
@@ -244,9 +246,11 @@ bool cLuaInterpreter::CallFunction(const char *func, const char *args[], cConnDC
 
 	if (!strcmp(func, "VH_OnScriptQuery")) {
 		const char *recipient = args[2];
-		if (strlen(recipient) && strcmp(recipient, "lua") && strcmp(recipient, mScriptName.c_str()))
+
+		if (recipient && (recipient[0] != '\0') && strcmp(recipient, "lua") && strcmp(recipient, mScriptName.c_str()))
 			return true;
-		responses = (ScriptResponses *)conn;
+
+		responses = (ScriptResponses*)conn;
 		conn = NULL;
 	}
 
@@ -366,22 +370,36 @@ bool cLuaInterpreter::CallFunction(const char *func, const char *args[], cConnDC
 			const char *sender = mScriptName.c_str();
 			bool to_pop = false;
 
-			if (lua_isstring(mL, -1)) answer = lua_tostring(mL, -1);
-			if (!answer || !strlen(answer)) {
+			if (lua_isstring(mL, -1))
+				answer = lua_tostring(mL, -1);
+
+			if ((!answer || (answer[0] == '\0')) && command && (command[0] != '\0')) {
 				if (!strcmp(command, "_get_script_file")) {
 					answer = mScriptName.c_str();
+
 				} else if (!strcmp(command, "_get_script_version")) {
 					lua_getglobal(mL, "_SCRIPTVERSION");
-					if (lua_isstring(mL, -1)) answer = lua_tostring(mL, -1);
+
+					if (lua_isstring(mL, -1))
+						answer = lua_tostring(mL, -1);
+
 					to_pop = true;
+
 				} else if (!strcmp(command, "_get_script_name")) {
 					lua_getglobal(mL, "_SCRIPTNAME");
-					if (lua_isstring(mL, -1)) answer = lua_tostring(mL, -1);
+
+					if (lua_isstring(mL, -1))
+						answer = lua_tostring(mL, -1);
+
 					to_pop = true;
 				}
 			}
-			if (answer) responses->push_back(ScriptResponse(answer, sender));
-			if (to_pop) lua_pop(mL, 1);
+
+			if (answer && (answer[0] != '\0'))
+				responses->push_back(ScriptResponse(answer, sender));
+
+			if (to_pop)
+				lua_pop(mL, 1);
 		}
 
 		lua_pop(mL, 1);

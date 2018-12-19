@@ -180,7 +180,10 @@ void cpiPython::OnLoad(cServerDC *server)
 	ostringstream o;
 	o << log_level;
 	char *level = GetConfig("pi_python", "log_level", o.str().c_str());
-	if (level && strlen(level) > 0) log_level = char2int(level[0]);
+
+	if (level && (level[0] != '\0'))
+		log_level = char2int(level[0]);
+
 	freee(level);
 
 	if (!lib_begin(callbacklist)) {
@@ -298,10 +301,13 @@ bool cpiPython::AutoLoad()
 
 const char *cpiPython::GetName(const char *path)
 {
-	if (!path || !strlen(path)) return NULL;
+	if (!path || (path[0] == '\0'))
+		return NULL;
+
 	for (int i = strlen(path) - 1; i >= 0; i--)
 		if (path[i] == '/' || path[i] == '\\')
 			return &path[i + 1];
+
 	return path;
 }
 
@@ -413,16 +419,6 @@ void cpiPython::LogLevel(int level)
 	SetConfig("pi_python", "log_level", o.str().c_str());
 	log("PY: log_level changed: %d --> %d\n", old, (int)log_level);
 	if (lib_loglevel) lib_loglevel(log_level);
-}
-
-bool cpiPython::IsNumber(const char *s)
-{
-	if (!s || !strlen(s)) return false;
-
-	for (unsigned int i = 0; i < strlen(s); i++) {
-		if (!isdigit(s[i])) return false;
-	}
-	return true;
 }
 
 int cpiPython::char2int(char c)
@@ -681,11 +677,11 @@ bool cpiPython::OnParsedMsgSearch(cConnDC *conn, cMessageDC *msg)
 				break;
 
 			case eDC_TTHS:
-				cDCProto::Create_Search(data, msg->ChunkString(eCH_SA_ADDR), msg->ChunkString(eCH_SA_TTH));
+				cpiPython::me->server->mP.Create_Search(data, msg->ChunkString(eCH_SA_ADDR), msg->ChunkString(eCH_SA_TTH), false, false); // dont reserve for pipe, we are not sending this
 				break;
 
 			case eDC_TTHS_PAS:
-				cDCProto::Create_Search(data, msg->ChunkString(eCH_SP_NICK), msg->ChunkString(eCH_SP_TTH), true);
+				cpiPython::me->server->mP.Create_Search(data, msg->ChunkString(eCH_SP_NICK), msg->ChunkString(eCH_SP_TTH), true, false); // dont reserve for pipe, we are not sending this
 				break;
 
 			default:
@@ -1226,10 +1222,15 @@ w_Targs *_SendPMToAll(int id, w_Targs *args)
 {
 	const char *data, *from;
 	long min_class, max_class;
-	if (!cpiPython::lib_unpack(args, "ssll", &data, &from, &min_class, &max_class)) return NULL;
-	if (!data || !from) return NULL;
+
+	if (!cpiPython::lib_unpack(args, "ssll", &data, &from, &min_class, &max_class))
+		return NULL;
+
+	if (!data || !from)
+		return NULL;
+
 	string start, end;
-	cpiPython::me->server->mP.Create_PMForBroadcast(start, end, from, from, data);
+	cpiPython::me->server->mP.Create_PMForBroadcast(start, end, from, from, data, false); // dont reserve for pipe, buffer is copied before sending
 	cpiPython::me->server->SendToAllWithNick(start, end, min_class, max_class);
 	cpiPython::me->server->LastBCNick = from;
 	return w_ret1;
@@ -1314,9 +1315,12 @@ w_Targs *_SetMyINFO(int id, w_Targs *args)
 	freee(origmail);
 	freee(origsize);
 
+	if (u->mMyINFO.capacity() < newinfo.size())
+		u->mMyINFO.reserve(newinfo.size());
+
 	u->mMyINFO = newinfo;
-	u->mMyINFO_basic = newinfo;
-	cpiPython::me->server->MyINFOToUsers(newinfo);
+	newinfo.reserve(newinfo.size() + 1); // reserve for pipe
+	cpiPython::me->server->mUserList.SendToAll(newinfo, cpiPython::me->server->mC.delayed_myinfo, true);
 	return w_ret1;
 }
 
@@ -1333,17 +1337,23 @@ w_Targs *_GetUserClass(int id, w_Targs *args)
 
 w_Targs *_GetNickList(int id, w_Targs *args)
 {
-	return cpiPython::lib_pack("s", strdup(cpiPython::me->server->mUserList.GetNickList().c_str()));
+	string list;
+	cpiPython::me->server->mUserList.GetNickList(list, false);
+	return cpiPython::lib_pack("s", strdup(list.c_str()));
 }
 
 w_Targs *_GetOpList(int id, w_Targs *args)
 {
-	return cpiPython::lib_pack("s", strdup(cpiPython::me->server->mOpList.GetNickList().c_str()));
+	string list;
+	cpiPython::me->server->mOpList.GetNickList(list, false);
+	return cpiPython::lib_pack("s", strdup(list.c_str()));
 }
 
 w_Targs *_GetBotList(int id, w_Targs *args)
 {
-	return cpiPython::lib_pack("s", strdup(cpiPython::me->server->mRobotList.GetNickList().c_str()));
+	string list;
+	cpiPython::me->server->mRobotList.GetNickList(list, false);
+	return cpiPython::lib_pack("s", strdup(list.c_str()));
 }
 
 w_Targs *_GetUserHost(int id, w_Targs *args)
@@ -1425,8 +1435,7 @@ w_Targs *_GetIPCC(int id, w_Targs *args)
 		return NULL;
 
 	string ccstr = GetIPCC(ip); // use script api, it has new optimizations
-	const char *cc = ccstr.c_str();
-	return cpiPython::lib_pack("s", strdup(cc));
+	return cpiPython::lib_pack("s", strdup(ccstr.c_str()));
 }
 
 w_Targs *_GetIPCN(int id, w_Targs *args)
@@ -1440,8 +1449,7 @@ w_Targs *_GetIPCN(int id, w_Targs *args)
 		return NULL;
 
 	string cnstr = GetIPCN(ip); // use script api, it has new optimizations
-	const char *cn = cnstr.c_str();
-	return cpiPython::lib_pack("s", strdup(cn));
+	return cpiPython::lib_pack("s", strdup(cnstr.c_str()));
 }
 
 // todo: add GetIPCity call
@@ -1464,8 +1472,7 @@ w_Targs *_GetIPASN(int id, w_Targs *args)
 	if (!cpiPython::me->server->mMaxMindDB->GetASN(asn_name, s_ip, s_db))
 		return NULL;
 
-	const char *asn = asn_name.c_str();
-	return cpiPython::lib_pack("s", strdup(asn));
+	return cpiPython::lib_pack("s", strdup(asn_name.c_str()));
 }
 
 w_Targs *_GetGeoIP(int id, w_Targs *args)
@@ -1545,7 +1552,7 @@ w_Targs *_AddRegUser(int id, w_Targs *args)
 	if (!cpiPython::lib_unpack(args, "slss", &nick, &clas, &pass, &op))
 		return NULL;
 
-	if (!nick || !strlen(nick) || (clas < eUC_NORMUSER) || ((clas > eUC_ADMIN) && (clas < eUC_MASTER)) || (clas > eUC_MASTER))
+	if (!nick || (nick[0] == '\0') || (clas < eUC_NORMUSER) || ((clas > eUC_ADMIN) && (clas < eUC_MASTER)) || (clas > eUC_MASTER))
 		return NULL;
 
 	if (!pass)
@@ -1567,7 +1574,7 @@ w_Targs *_DelRegUser(int id, w_Targs *args)
 	if (!cpiPython::lib_unpack(args, "s", &nick))
 		return NULL;
 
-	if (!nick || !strlen(nick))
+	if (!nick || (nick[0] == '\0'))
 		return NULL;
 
 	if (DelRegUser(nick))
@@ -1584,7 +1591,7 @@ w_Targs *_SetRegClass(int id, w_Targs *args)
 	if (!cpiPython::lib_unpack(args, "sl", &nick, &clas))
 		return NULL;
 
-	if (!nick || !strlen(nick) || (clas < eUC_NORMUSER) || ((clas > eUC_ADMIN) && (clas < eUC_MASTER)) || (clas > eUC_MASTER))
+	if (!nick || (nick[0] == '\0') || (clas < eUC_NORMUSER) || ((clas > eUC_ADMIN) && (clas < eUC_MASTER)) || (clas > eUC_MASTER))
 		return NULL;
 
 	if (SetRegClass(nick, clas))
@@ -1619,7 +1626,7 @@ w_Targs *_KickUser(int id, w_Targs *args)
 	if (!user)
 		return NULL;
 
-	if (addr && strlen(addr))
+	if (addr && (addr[0] != '\0'))
 		user->mxConn->mCloseRedirect = addr;
 
 	cpiPython::me->server->DCKickNick(NULL, user, nick, why, (eKI_CLOSE | eKI_WHY | eKI_PM | eKI_BAN), note_op, note_usr);
@@ -1742,7 +1749,9 @@ w_Targs *_GetConfig(int id, w_Targs *args)
 long is_robot_nick_bad(const char *nick)
 {
 	// Returns: 0 = OK, 1 = already exists, 2 = empty, 3 = bad character, 4 = reserved nick.
-	if (!nick || !strlen(nick)) return eBOT_WITHOUT_NICK;
+	if (!nick || (nick[0] == '\0'))
+		return eBOT_WITHOUT_NICK;
+
 	string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN)), s_nick(nick);
 	if (s_nick.find_first_of(badchars) != s_nick.npos) return eBOT_BAD_CHARS;
 	cServerDC *server = cpiPython::me->server;
@@ -1781,22 +1790,19 @@ w_Targs *_AddRobot(int id, w_Targs *args)
 
 	if (robot) {
 		cServerDC *server = cpiPython::me->server;
-		server->mP.Create_MyINFO(robot->mMyINFO, robot->mNick, desc, speed, email, share);
-		robot->mMyINFO_basic = robot->mMyINFO;
-
+		server->mP.Create_MyINFO(robot->mMyINFO, robot->mNick, desc, speed, email, share, false); // dont reserve for pipe, we are not sending this
 		string msg;
-
-		msg.reserve(robot->mMyINFO.size() + 1);
+		msg.reserve(robot->mMyINFO.size() + 1); // first use, reserve for pipe
 		msg = robot->mMyINFO;
-		server->MyINFOToUsers(msg, false);
+		server->mUserList.SendToAll(msg, server->mC.delayed_myinfo, true);
 
 		if (robot->mClass >= server->mC.oplist_class) {
-			server->mP.Create_OpList(msg, robot->mNick);
-			server->MyINFOToUsers(msg);
+			server->mP.Create_OpList(msg, robot->mNick, true); // reserve for pipe
+			server->mUserList.SendToAll(msg, server->mC.delayed_myinfo, true);
 		}
 
-		server->mP.Create_BotList(msg, robot->mNick);
-		server->MyINFOToUsers(msg, true, true);
+		server->mP.Create_BotList(msg, robot->mNick, true); // reserve for pipe
+		server->mUserList.SendToAllWithFeature(msg, eSF_BOTLIST, server->mC.delayed_myinfo, true);
 		return w_ret1;
 	}
 
@@ -1806,11 +1812,19 @@ w_Targs *_AddRobot(int id, w_Targs *args)
 w_Targs *_DelRobot(int id, w_Targs *args)
 {
 	const char *nick;
-	if (!cpiPython::lib_unpack(args, "s", &nick)) return NULL;
-	if (!nick || strlen(nick) == 0) return NULL;
-	cPluginRobot *robot = (cPluginRobot *)cpiPython::me->server->mUserList.GetUserByNick(nick);
-	if (robot)
-		if (cpiPython::me->DelRobot(robot)) return w_ret1;
+	if (!cpiPython::lib_unpack(args, "s", &nick))
+		return NULL;
+
+	if (!nick || (nick[0] == '\0'))
+		return NULL;
+
+	cPluginRobot *robot = (cPluginRobot*)cpiPython::me->server->mUserList.GetUserByNick(nick);
+
+	if (robot) {
+		if (cpiPython::me->DelRobot(robot))
+			return w_ret1;
+	}
+
 	return NULL;
 }
 
@@ -1841,9 +1855,13 @@ w_Targs *_UserRestrictions(int id, w_Targs *args)
 {
 	long res = 0;
 	const char *nick, *nochattime, *nopmtime, *nosearchtime, *noctmtime;
+
 	if (!cpiPython::lib_unpack(args, "sssss", &nick, &nochattime, &nopmtime, &nosearchtime, &noctmtime))
 		return NULL;
-	if (!nick || strlen(nick) == 0) return NULL;
+
+	if (!nick || (nick[0] == '\0'))
+		return NULL;
+
 	string chat = (nochattime) ? nochattime : "";
 	string pm = (nopmtime) ? nopmtime : "";
 	string search = (nosearchtime) ? nosearchtime : "";
@@ -1902,15 +1920,17 @@ w_Targs *_UserRestrictions(int id, w_Targs *args)
 w_Targs *_Topic(int id, w_Targs *args)
 {
 	const char *topic;
-	if (!cpiPython::lib_unpack(args, "s", &topic)) return NULL;
-	if (topic && strlen(topic) < 1024) {
+
+	if (!cpiPython::lib_unpack(args, "s", &topic))
+		return NULL;
+
+	if (topic && (strlen(topic) < 1024)) {
 		cpiPython::me->server->mC.hub_topic = topic;
-		string msg, sTopic;
-		sTopic = topic;
-		cpiPython::me->server->mP.Create_HubName(msg, cpiPython::me->server->mC.hub_name, sTopic);
-		msg.reserve(msg.size() + 1);
+		string msg, sTopic(topic);
+		cpiPython::me->server->mP.Create_HubName(msg, cpiPython::me->server->mC.hub_name, sTopic, true); // reserve for pipe
 		cpiPython::me->server->mUserList.SendToAll(msg, true, true);
 	}
+
 	return cpiPython::lib_pack("s", strdup(cpiPython::me->server->mC.hub_topic.c_str()));
 }
 
@@ -1918,12 +1938,23 @@ w_Targs *_name_and_version(int id, w_Targs *args)
 {
 	const char *name, *version;
 	cPythonInterpreter *py = cpiPython::me->GetInterpreter(id);
-	if (!py) return NULL;
-	if (!cpiPython::lib_unpack(args, "ss", &name, &version)) return NULL;
-	if (!name || !strlen(name)) name = py->name.c_str();
-	else py->name = name;
-	if (!version || !strlen(version)) version = py->version.c_str();
-	else py->version = version;
+
+	if (!py)
+		return NULL;
+
+	if (!cpiPython::lib_unpack(args, "ss", &name, &version))
+		return NULL;
+
+	if (!name || (name[0] == '\0'))
+		name = py->name.c_str();
+	else
+		py->name = name;
+
+	if (!version || (version[0] == '\0'))
+		version = py->version.c_str();
+	else
+		py->version = version;
+
 	return cpiPython::lib_pack("ss", strdup(name), strdup(version));
 }
 

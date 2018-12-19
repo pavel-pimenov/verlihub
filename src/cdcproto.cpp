@@ -80,7 +80,7 @@ int cDCProto::TreatMsg(cMessageParser *pMsg, cAsyncConn *pConn)
 			tMsgAct action = mS->Filter(tDCMsg(msg->mType), conn);
 	*/
 
-	size_t msg_strlen = strlen(msg->mStr.data());
+	size_t msg_strlen = strlen(msg->mStr.data()); // note: we use strlen here because it might contain null character
 
 	if (msg_strlen < msg->mLen) { // look for null character, message is already parsed by this moment
 		if (msg->mType == eDCC_LOCK) { // bug is some clients that send null character in referer
@@ -378,7 +378,7 @@ int cDCProto::DC_Supports(cMessageDC *msg, cConnDC *conn)
 	istringstream is(supports);
 	string feature, omsg, pars;
 
-	pars.reserve( // all possible support flags, todo: update list when new added
+	pars.reserve( // all possible support flags, i think we win by doing this due to massive appendings later, todo: update list when new flags added
 		/*OpPlus */7 +
 		/*NoHello */8 +
 		/*NoGetINFO */10 +
@@ -532,8 +532,7 @@ int cDCProto::DC_Supports(cMessageDC *msg, cConnDC *conn)
 	if (mS->mCallBacks.mOnParsedMsgSupports.CallAll(conn, msg, &copy))
 	#endif
 	{
-		Create_Supports(omsg, pars); // send our supports based on client supports
-		omsg.reserve(omsg.size() + 1);
+		Create_Supports(omsg, pars, true); // send our supports based on client supports, reserve for pipe
 		conn->Send(omsg, true);
 	}
 
@@ -558,8 +557,7 @@ int cDCProto::DC_Supports(cMessageDC *msg, cConnDC *conn)
 			pars.append("$$");
 		}
 
-		Create_NickRule(omsg, pars);
-		omsg.reserve(omsg.size() + 1);
+		Create_NickRule(omsg, pars, true); // reserve for pipe
 		conn->Send(omsg, true);
 	}
 
@@ -669,8 +667,7 @@ int cDCProto::DC_ValidateNick(cMessageDC *msg, cConnDC *conn)
 			conn->LogStream() << mS->mUserCountTot << '/' << limit << " :: " << mS->mUserCount[conn->mGeoZone] << '/' << limit_cc << " :: " << omsg << endl;
 
 		mS->ConnCloseMsg(conn, os.str(), 1000, eCR_USERLIMIT);
-		Create_HubIsFull(omsg); // must be sent after chat message
-		omsg.reserve(omsg.size() + 1);
+		Create_HubIsFull(omsg, true); // must be sent after chat message, reserve for pipe
 		conn->Send(omsg, true);
 		return -1;
 
@@ -686,16 +683,14 @@ int cDCProto::DC_ValidateNick(cMessageDC *msg, cConnDC *conn)
 		if (tot >= mS->mC.max_users_from_ip) {
 			os << autosprintf(_("User limit from IP address %s exceeded at %d online users."), conn->mAddrIP.c_str(), tot);
 			mS->ConnCloseMsg(conn, os.str(), 1000, eCR_USERLIMIT);
-			Create_HubIsFull(omsg); // must be sent after chat message
-			omsg.reserve(omsg.size() + 1);
+			Create_HubIsFull(omsg, true); // must be sent after chat message, reserve for pipe
 			conn->Send(omsg, true);
 			return -1;
 		}
 	}
 
 	if (mS->mC.hub_name.size()) { // send hub name without topic
-		Create_HubName(omsg, mS->mC.hub_name, "");
-		omsg.reserve(omsg.size() + 1);
+		Create_HubName(omsg, mS->mC.hub_name, "", true); // reserve for pipe
 		conn->Send(omsg, true);
 	}
 
@@ -711,16 +706,15 @@ int cDCProto::DC_ValidateNick(cMessageDC *msg, cConnDC *conn)
 	}
 
 	if (conn->NeedsPassword()) {
-		Create_GetPass(omsg);
-		omsg.reserve(omsg.size() + 1);
+		Create_GetPass(omsg, true); // reserve for pipe
 		conn->Send(omsg, true);
 	} else {
-		mS->DCHello(nick, conn);
+		mS->mP.Create_Hello(omsg, nick, true); // reserve for pipe
+		conn->Send(omsg, true);
 		conn->SetLSFlag(eLS_PASSWD);
 
 		if (conn->mFeatures & eSF_HUBURL) { // send hub url command
-			Create_GetHubURL(omsg);
-			omsg.reserve(omsg.size() + 1);
+			Create_GetHubURL(omsg, true); // reserve for pipe
 			conn->Send(omsg, true);
 		}
 	}
@@ -831,17 +825,16 @@ int cDCProto::DC_MyPass(cMessageDC *msg, cConnDC *conn)
 		conn->SetLSFlag(eLS_PASSWD);
 		conn->mpUser->Register(); // set class
 		mS->mR->Login(conn, conn->mpUser->mNick);
-		mS->DCHello(conn->mpUser->mNick, conn);
+		mS->mP.Create_Hello(omsg, conn->mpUser->mNick, true); // reserve for pipe
+		conn->Send(omsg, true);
 
 		if (conn->mFeatures & eSF_HUBURL) { // send hub url command
-			Create_GetHubURL(omsg);
-			omsg.reserve(omsg.size() + 1);
+			Create_GetHubURL(omsg, true); // reserve for pipe
 			conn->Send(omsg, true);
 		}
 
 		if (conn->mpUser->mClass >= eUC_OPERATOR) { // operators get $LogedIn
-			Create_LogedIn(omsg, conn->mpUser->mNick);
-			omsg.reserve(omsg.size() + 1);
+			Create_LogedIn(omsg, conn->mpUser->mNick, true); // reserve for pipe
 			conn->Send(omsg, true);
 		}
 
@@ -862,8 +855,7 @@ int cDCProto::DC_MyPass(cMessageDC *msg, cConnDC *conn)
 
 			mS->mR->LoginError(conn, conn->mpUser->mNick);
 			mS->ConnCloseMsg(conn, _("You've been temporarily banned due to incorrect password."), 1000, eCR_PASSWORD);
-			Create_BadPass(omsg); // must be sent after chat message
-			omsg.reserve(omsg.size() + 1);
+			Create_BadPass(omsg, true); // must be sent after chat message, reserve for pipe
 			conn->Send(omsg, true);
 		} else {
 			if (conn->Log(3))
@@ -978,18 +970,9 @@ int cDCProto::DC_GetNickList(cMessageDC *msg, cConnDC *conn)
 	if (conn->CheckProtoFlood(msg->mStr, ePF_NICKLIST)) // protocol flood
 		return -1;
 
-	if (!conn->GetLSFlag(eLS_MYINFO) && mS->mC.nicklist_on_login) {
-		if (mS->mC.delayed_login) {
-			int LSFlag = conn->GetLSFlag(eLS_LOGIN_DONE);
-
-			if (LSFlag & eLS_NICKLST)
-				LSFlag -= eLS_NICKLST;
-
-			conn->ReSetLSFlag(LSFlag);
-		}
-
+	if (!conn->GetLSFlag(eLS_MYINFO)) {
 		conn->mSendNickList = true;
-		return 0;
+		return 1;
 	}
 
 	if ((conn->mpUser->mClass < eUC_OPERATOR) && !mS->MinDelay(conn->mpUser->mT.nicklist, mS->mC.int_nicklist))
@@ -1017,47 +1000,49 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 	if (conn->CheckProtoFlood(msg->mStr, ePF_MYINFO)) // protocol flood
 		return -1;
 
-	if (!conn->mConnType) // parse connection
-		conn->mConnType = ParseSpeed(msg->ChunkString(eCH_MI_SPEED));
-
+	string myinfo_desc = msg->ChunkString(eCH_MI_DESC);
+	cDCTag *dc_tag = mS->mCo->mDCClients->ParseTag(myinfo_desc);
 	ostringstream os;
-	cDCTag *tag = mS->mCo->mDCClients->ParseTag(msg->ChunkString(eCH_MI_DESC)); // check tag
 
-	if (!mS->mC.tag_allow_none && (mS->mCo->mDCClients->mPositionInDesc < 0) && (conn->mpUser->mClass < mS->mC.tag_min_class_ignore) && (conn->mpUser->mClass != eUC_PINGER)) {
+	if (!mS->mC.tag_allow_none && (mS->mCo->mDCClients->mPositionInDesc < 0) && (conn->mpUser->mClass < mS->mC.tag_min_class_ignore) && (conn->mpUser->mClass != eUC_PINGER)) { // check for empty tag if required
 		os << _("Your client didn't specify a tag.");
 
 		if (conn->Log(2))
 			conn->LogStream() << os.str() << endl;
 
 		mS->ConnCloseMsg(conn, os.str(), 1000, eCR_TAG_NONE);
-		delete tag;
-		tag = NULL;
+		delete dc_tag;
+		dc_tag = NULL;
 		return -1;
 	}
 
-	bool TagValid = true;
+	bool tag_valid = true;
 	int tag_result = 0;
+	string myinfo_speed = msg->ChunkString(eCH_MI_SPEED);
 
-	if ((!mS->mC.tag_allow_none || (mS->mC.tag_allow_none && (mS->mCo->mDCClients->mPositionInDesc >= 0))) && (conn->mpUser->mClass < mS->mC.tag_min_class_ignore) && (conn->mpUser->mClass != eUC_PINGER))
-		TagValid = tag->ValidateTag(os, conn->mConnType, tag_result);
+	if (!conn->mConnType) // parse connection, it will be used below
+		conn->mConnType = ParseSpeed(myinfo_speed);
+
+	if ((!mS->mC.tag_allow_none || (mS->mCo->mDCClients->mPositionInDesc >= 0)) && (conn->mpUser->mClass < mS->mC.tag_min_class_ignore) && (conn->mpUser->mClass != eUC_PINGER)) // validate tag
+		tag_valid = dc_tag->ValidateTag(os, conn->mConnType, tag_result);
 
 	#ifndef WITHOUT_PLUGINS
-		TagValid = TagValid && mS->mCallBacks.mOnValidateTag.CallAll(conn, tag);
+		tag_valid = tag_valid && mS->mCallBacks.mOnValidateTag.CallAll(conn, dc_tag);
 	#endif
 
-	if (!TagValid) {
+	if (!tag_valid) {
 		if (conn->Log(2))
-			conn->LogStream() << "Invalid tag with result " << tag_result << ": " << tag << endl;
+			conn->LogStream() << "Invalid tag with result " << tag_result << ": " << dc_tag << endl;
 
 		mS->ConnCloseMsg(conn, os.str(), 1000, eCR_TAG_INVALID);
-		delete tag;
-		tag = NULL;
+		delete dc_tag;
+		dc_tag = NULL;
 		return -1;
 	}
 
-	bool WasPassive = conn->mpUser->IsPassive; // user might have changed his mode
+	bool was_passive = conn->mpUser->IsPassive; // user might have changed his mode
 
-	switch (tag->mClientMode) {
+	switch (dc_tag->mClientMode) {
 		case eCM_NOTAG:
 		case eCM_PASSIVE:
 		case eCM_SOCK5:
@@ -1069,73 +1054,66 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 			break;
 	}
 
-	if (conn->mpUser->mInList && (WasPassive != conn->mpUser->IsPassive)) { // change user mode if differs and not first time
-		if (WasPassive) {
-			if (mS->mPassiveUsers.ContainsNick(conn->mpUser->mNick))
-				mS->mPassiveUsers.RemoveByNick(conn->mpUser->mNick);
+	if (conn->mpUser->mInList && (was_passive != conn->mpUser->IsPassive)) { // change user mode if differs and not first time
+		if (was_passive) {
+			if (mS->mPassiveUsers.ContainsHash(conn->mpUser->mNickHash))
+				mS->mPassiveUsers.RemoveByHash(conn->mpUser->mNickHash);
 
-			if (!mS->mActiveUsers.ContainsNick(conn->mpUser->mNick))
-				mS->mActiveUsers.AddWithNick(conn->mpUser, conn->mpUser->mNick);
+			if (!mS->mActiveUsers.ContainsHash(conn->mpUser->mNickHash))
+				mS->mActiveUsers.AddWithHash(conn->mpUser, conn->mpUser->mNickHash);
 		} else {
-			if (mS->mActiveUsers.ContainsNick(conn->mpUser->mNick))
-				mS->mActiveUsers.RemoveByNick(conn->mpUser->mNick);
+			if (mS->mActiveUsers.ContainsHash(conn->mpUser->mNickHash))
+				mS->mActiveUsers.RemoveByHash(conn->mpUser->mNickHash);
 
-			if (!mS->mPassiveUsers.ContainsNick(conn->mpUser->mNick))
-				mS->mPassiveUsers.AddWithNick(conn->mpUser, conn->mpUser->mNick);
+			if (!mS->mPassiveUsers.ContainsHash(conn->mpUser->mNickHash))
+				mS->mPassiveUsers.AddWithHash(conn->mpUser, conn->mpUser->mNickHash);
 		}
 	}
 
-	int theoclass = conn->GetTheoricalClass();
 	string omsg;
 
-	if (conn->mpUser->IsPassive && (mS->mC.max_users_passive > -1) && (theoclass < eUC_OPERATOR) && (mS->mPassiveUsers.Size() > (unsigned int)mS->mC.max_users_passive)) { // passive user limit
+	if (conn->mpUser->IsPassive && (conn->mpUser->mClass != eUC_PINGER) && (conn->mpUser->mClass < eUC_OPERATOR) && (mS->mC.max_users_passive > -1) && (mS->mPassiveUsers.Size() > (unsigned int)mS->mC.max_users_passive)) { // passive user limit
 		os << autosprintf(_("Passive user limit exceeded at %d users. Try again later or set up an active connection."), mS->mPassiveUsers.Size());
 
 		if (conn->Log(2))
 			conn->LogStream() << "Passive user limit exceeded: " << mS->mPassiveUsers.Size() << endl;
 
 		mS->ConnCloseMsg(conn, os.str(), 1000, eCR_USERLIMIT);
-		Create_HubIsFull(omsg); // must be sent after chat message
-		omsg.reserve(omsg.size() + 1);
+		Create_HubIsFull(omsg, true); // must be sent after chat message, reserve for pipe
 		conn->Send(omsg, true);
-		delete tag;
-		tag = NULL;
+		delete dc_tag;
+		dc_tag = NULL;
 		return -1;
 	}
 
-	string &str_share = msg->ChunkString(eCH_MI_SIZE); // check share conditions
+	string myinfo_share = msg->ChunkString(eCH_MI_SIZE); // check share conditions
 
-	if (str_share.size() > 18) { // share is too big
-		conn->CloseNow(); // todo: notify user
-		delete tag;
-		tag = NULL;
-		return -1;
-	} else if (str_share.empty() || (str_share[0] == '-')) // missing or negative share
-		str_share = "0";
+	if ((myinfo_share.size() > 18) || !IsNumber(myinfo_share.c_str()))
+		myinfo_share = "0";
 
-	__int64 share = 0, shareB = 0;
-	shareB = StringAsLL(str_share);
-	share = shareB / (1024 * 1024);
+	__int64 share_check = 0, share_byte = 0;
+	share_byte = StringAsLL(myinfo_share);
+	share_check = share_byte / (1024 * 1024);
 
-	if (theoclass <= eUC_OPERATOR) { // calculate minimum and maximum
+	if (conn->mpUser->mClass <= eUC_OPERATOR) { // calculate minimum and maximum
 		__int64 min_share = mS->mC.min_share;
 		__int64 max_share = mS->mC.max_share;
 		__int64 min_share_p, min_share_a;
 
-		if (theoclass == eUC_PINGER) {
+		if (conn->mpUser->mClass == eUC_PINGER) {
 			min_share = 0;
 		} else {
-			if (theoclass >= eUC_REGUSER) {
+			if (conn->mpUser->mClass >= eUC_REGUSER) {
 				min_share = mS->mC.min_share_reg;
 				max_share = mS->mC.max_share_reg;
 			}
 
-			if (theoclass >= eUC_VIPUSER) {
+			if (conn->mpUser->mClass >= eUC_VIPUSER) {
 				min_share = mS->mC.min_share_vip;
 				max_share = mS->mC.max_share_vip;
 			}
 
-			if (theoclass >= eUC_OPERATOR) {
+			if (conn->mpUser->mClass >= eUC_OPERATOR) {
 				min_share = mS->mC.min_share_ops;
 				max_share = mS->mC.max_share_ops;
 			}
@@ -1150,33 +1128,33 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 		//if (conn->mpUser->Can(eUR_NOSHARE, mS->mTime.Sec()))
 			//min_share = 0;
 
-		if ((share < min_share) || (max_share && (share > max_share))) {
-			if (share < min_share)
-				os << autosprintf(_("You share %s but minimum allowed is %s (%s for active users, %s for passive users)."), convertByte(shareB, false).c_str(), convertByte(min_share * 1024 * 1024, false).c_str(), convertByte(min_share_a * 1024 * 1024, false).c_str(), convertByte(min_share_p * 1024 * 1024, false).c_str());
+		if ((share_check < min_share) || (max_share && (share_check > max_share))) {
+			if (share_check < min_share)
+				os << autosprintf(_("You share %s but minimum allowed is %s (%s for active users, %s for passive users)."), convertByte(share_byte, false).c_str(), convertByte(min_share * 1024 * 1024, false).c_str(), convertByte(min_share_a * 1024 * 1024, false).c_str(), convertByte(min_share_p * 1024 * 1024, false).c_str());
 			else
-				os << autosprintf(_("You share %s but maximum allowed is %s."), convertByte(shareB, false).c_str(), convertByte(max_share * 1024 * 1024, false).c_str());
+				os << autosprintf(_("You share %s but maximum allowed is %s."), convertByte(share_byte, false).c_str(), convertByte(max_share * 1024 * 1024, false).c_str());
 
 			if (conn->Log(2))
 				conn->LogStream() << "Share limit" << endl;
 
 			mS->ConnCloseMsg(conn, os.str(), 4000, eCR_SHARE_LIMIT);
-			delete tag;
-			tag = NULL;
+			delete dc_tag;
+			dc_tag = NULL;
 			return -1;
 		}
 
-		if (theoclass <= eUC_VIPUSER) { // second share limit that disables search and download
+		if (conn->mpUser->mClass <= eUC_VIPUSER) { // second share limit that disables search and download
 			__int64 temp_min_share = 0; // todo: rename to min_share_use_hub_guest
 
-			switch (theoclass) {
-				case eUC_NORMUSER:
-					temp_min_share = mS->mC.min_share_use_hub;
-					break;
+			switch (conn->mpUser->mClass) {
 				case eUC_REGUSER:
 					temp_min_share = mS->mC.min_share_use_hub_reg;
 					break;
 				case eUC_VIPUSER:
 					temp_min_share = mS->mC.min_share_use_hub_vip;
+					break;
+				default: // eUC_NORMUSER
+					temp_min_share = mS->mC.min_share_use_hub;
 					break;
 			}
 
@@ -1184,7 +1162,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 				if (conn->mpUser->IsPassive)
 					temp_min_share = (__int64)(temp_min_share * mS->mC.min_share_factor_passive);
 
-				if (share < temp_min_share) {
+				if (share_check < temp_min_share) {
 					conn->mpUser->SetRight(eUR_SEARCH, 0);
 					conn->mpUser->SetRight(eUR_CTM, 0);
 				}
@@ -1193,19 +1171,21 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 
 		int use_hub_class = ((conn->mpUser->IsPassive) ? mS->mC.min_class_use_hub_passive : mS->mC.min_class_use_hub);
 
-		if (theoclass < use_hub_class) {
+		if (conn->mpUser->mClass < use_hub_class) {
 			conn->mpUser->SetRight(eUR_SEARCH, 0);
 			conn->mpUser->SetRight(eUR_CTM, 0);
 		}
 	}
 
-	if (!conn->mpUser->mHideShare) // only if not hidden
+	if (!conn->mpUser->mHideShare) // minus old share, only if not hidden
 		mS->mTotalShare -= conn->mpUser->mShare;
 
-	conn->mpUser->mShare = shareB;
+	conn->mpUser->mShare = share_byte;
 
-	if (!conn->mpUser->mHideShare) // update total share
-		mS->mTotalShare += conn->mpUser->mShare;
+	if (conn->mpUser->mHideShare) // update total share
+		myinfo_share = "0";
+	else
+		mS->mTotalShare += share_byte;
 
 	if (!conn->mpUser->mInList) { // detect clone using ip and share, only when user logs in
 		string clone;
@@ -1217,8 +1197,8 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 				conn->LogStream() << os.str() << endl;
 
 			mS->ConnCloseMsg(conn, os.str(), 1000, eCR_CLONE);
-			delete tag;
-			tag = NULL;
+			delete dc_tag;
+			dc_tag = NULL;
 			return -1;
 		}
 	}
@@ -1227,7 +1207,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 		cBan Ban(mS);
 		unsigned int banned = mS->mBanList->TestBan(Ban, conn, conn->mpUser->mNick, eBF_SHARE);
 
-		if (banned && (theoclass <= eUC_REGUSER)) {
+		if (banned && (conn->mpUser->mClass <= eUC_REGUSER)) {
 			os << ((banned == 1) ? _("You are prohibited from entering this hub") : _("You are banned from this hub")) << ":\r\n";
 			Ban.DisplayUser(os);
 			mS->DCPublicHS(os.str(), conn);
@@ -1236,16 +1216,16 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 				conn->LogStream() << "Kicked user due to ban detection" << endl;
 
 			conn->CloseNice(1000, eCR_KICKED);
-			delete tag;
-			tag = NULL;
+			delete dc_tag;
+			dc_tag = NULL;
 			return -1;
 		}
 
 		#ifndef WITHOUT_PLUGINS
 			if (!mS->mCallBacks.mOnFirstMyINFO.CallAll(conn, msg)) {
 				conn->CloseNice(1000, eCR_KICKED);
-				delete tag;
-				tag = NULL;
+				delete dc_tag;
+				dc_tag = NULL;
 				return -2;
 			}
 		#endif
@@ -1253,8 +1233,8 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 
 	#ifndef WITHOUT_PLUGINS
 		if (!mS->mCallBacks.mOnParsedMsgMyINFO.CallAll(conn, msg)) {
-			delete tag;
-			tag = NULL;
+			delete dc_tag;
+			dc_tag = NULL;
 			return -2;
 		}
 	#endif
@@ -1265,36 +1245,35 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 	if (msg->mModified && msg->SplitChunks() && conn->Log(2)) // plugin has modified message, return here?
 		conn->LogStream() << "MyINFO syntax error after plugin modification" << endl;
 
-	string myinfo_full, myinfo_basic, desctag, desc, sTag, speed, email, sShare; // $MyINFO $ALL <nick> <description><tag>$ $<speed><status>$<email>$<share>$
-	desctag = msg->ChunkString(eCH_MI_DESC);
+	string temp, myinfo, myinfo_tag, myinfo_email; // $MyINFO $ALL <nick> <description><tag>$ $<speed><status>$<email>$<share>$
 
-	if (!desctag.empty()) {
-		mS->mCo->mDCClients->ParsePos(desctag); // get new tag position in case its changed
-		desc.assign(desctag, 0, mS->mCo->mDCClients->mPositionInDesc);
+	if (myinfo_desc.size()) {
+		temp = myinfo_desc;
+		mS->mCo->mDCClients->ParsePos(temp); // get new tag position in case its changed
 
-		if (mS->mCo->mDCClients->mPositionInDesc >= 0)
-			sTag.assign(desctag, mS->mCo->mDCClients->mPositionInDesc, -1);
+		if (mS->mC.show_desc_len >= 0) // hide description
+			myinfo_desc.assign(temp, 0, mS->mC.show_desc_len);
+		else
+			myinfo_desc.assign(temp, 0, mS->mCo->mDCClients->mPositionInDesc);
+
+		if (mS->mC.show_tags && mS->mCo->mDCClients->mPositionInDesc >= 0)
+			myinfo_tag.assign(temp, mS->mCo->mDCClients->mPositionInDesc, -1);
 	}
-
-	if (mS->mC.show_desc_len >= 0) // hide description
-		desc.assign(desc, 0, mS->mC.show_desc_len);
-
-	string temp;
 
 	if (mS->mC.desc_insert_mode) { // description insert mode
 		if (mS->mC.desc_insert_vars.empty()) { // insert mode only
-			switch (tag->mClientMode) {
+			switch (dc_tag->mClientMode) {
 				case eCM_ACTIVE:
-					desc = "[A]" + desc;
+					myinfo_desc = "[A]" + myinfo_desc;
 					break;
 				case eCM_PASSIVE:
-					desc = "[P]" + desc;
+					myinfo_desc = "[P]" + myinfo_desc;
 					break;
 				case eCM_SOCK5:
-					desc = "[5]" + desc;
+					myinfo_desc = "[5]" + myinfo_desc;
 					break;
 				default: // eCM_OTHER, eCM_NOTAG
-					desc = "[?]" + desc;
+					myinfo_desc = "[?]" + myinfo_desc;
 					break;
 			}
 
@@ -1323,7 +1302,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 				}
 			}
 
-			switch (tag->mClientMode) {
+			switch (dc_tag->mClientMode) {
 				case eCM_ACTIVE:
 					ReplaceVarInString(temp, "MODE", temp, 'A');
 					break;
@@ -1341,37 +1320,28 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 					break;
 			}
 
-			desc = temp + desc;
+			myinfo_desc = temp + myinfo_desc;
 		}
 	}
 
-	delete tag; // tag is no longer used
-	tag = NULL;
-	speed = msg->ChunkString(eCH_MI_SPEED);
+	delete dc_tag; // dc tag is no longer used
+	dc_tag = NULL;
+	myinfo_speed = msg->ChunkString(eCH_MI_SPEED);
 
-	if (speed.size()) {
-		conn->mpUser->mMyFlag = speed[speed.size() - 1];
+	if (myinfo_speed.size()) {
+		conn->mpUser->mMyFlag = myinfo_speed[myinfo_speed.size() - 1];
 
 		if (!mS->mC.show_speed) // hide speed but keep status byte
-			speed.assign(speed, speed.size() - 1, -1);
+			myinfo_speed.assign(myinfo_speed, myinfo_speed.size() - 1, -1);
+	} else {
+		myinfo_speed = "\x1";
+		conn->mpUser->mMyFlag = myinfo_speed[0];
 	}
 
-	if (!mS->mC.show_email) // hide email
-		email = "";
-	else
-		email = msg->ChunkString(eCH_MI_MAIL);
+	if (mS->mC.show_email) // hide email
+		myinfo_email = msg->ChunkString(eCH_MI_MAIL);
 
-	if (conn->mpUser->mHideShare) // hide share
-		sShare = "0";
-	else
-		sShare = str_share;
-
-	Create_MyINFO(myinfo_basic, nick, desc, speed, email, sShare);
-
-	if ((conn->mpUser->mClass >= eUC_OPERATOR) && (mS->mC.show_tags < 3)) // ops have hidden myinfo
-		myinfo_full = myinfo_basic;
-	else
-		Create_MyINFO(myinfo_full, nick, desc + sTag, speed, email, sShare);
+	Create_MyINFO(myinfo, nick, myinfo_desc + myinfo_tag, myinfo_speed, myinfo_email, myinfo_share, false); // dont reserve for pipe, we are not sending this
 
 	if (conn->mpUser->mInList) { // login or send to all
 		/*
@@ -1381,24 +1351,17 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 				send only the version that has changed only to those who want it
 		*/
 
-		if (mS->MinDelay(conn->mpUser->mT.info, mS->mC.int_myinfo) && (StrCompare(conn->mpUser->mMyINFO, 0, conn->mpUser->mMyINFO.size(), myinfo_full) != 0)) {
-			conn->mpUser->mMyINFO = myinfo_full;
+		if (mS->MinDelay(conn->mpUser->mT.info, mS->mC.int_myinfo) && (StrCompare(conn->mpUser->mMyINFO, 0, conn->mpUser->mMyINFO.size(), myinfo) != 0)) {
+			if (conn->mpUser->mMyINFO.capacity() < myinfo.size())
+				conn->mpUser->mMyINFO.reserve(myinfo.size());
 
-			if (StrCompare(conn->mpUser->mMyINFO_basic, 0, conn->mpUser->mMyINFO_basic.size(), myinfo_basic) != 0) {
-				conn->mpUser->mMyINFO_basic = myinfo_basic;
-				string send_info;
-				send_info = GetMyInfo(conn->mpUser, eUC_NORMUSER);
-				mS->MyINFOToUsers(send_info);
-			}
-
-			if (mS->mC.show_tags >= 1) { // operators get full myinfo
-				myinfo_full.reserve(myinfo_full.size() + 1);
-				mS->mUserList.SendToAllWithClass(myinfo_full, eUC_OPERATOR, eUC_MASTER, mS->mC.delayed_myinfo, true);
-			}
+			conn->mpUser->mMyINFO = myinfo;
+			myinfo.reserve(myinfo.size() + 1); // reserve for pipe
+			mS->mUserList.SendToAll(myinfo, mS->mC.delayed_myinfo, true);
 		}
 	} else { // user logs in for the first time
-		conn->mpUser->mMyINFO = myinfo_full; // keep it
-		conn->mpUser->mMyINFO_basic = myinfo_basic;
+		conn->mpUser->mMyINFO.reserve(myinfo.size()); // first use
+		conn->mpUser->mMyINFO = myinfo;
 		conn->SetLSFlag(eLS_MYINFO);
 
 		if (conn->mFeatures & eSF_SEARRULE) { // send search rule command
@@ -1493,8 +1456,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 				temp.append(StringFrom(use_share * 1024 * 1024));
 			}
 
-			Create_SearchRule(omsg, temp);
-			omsg.reserve(omsg.size() + 1);
+			Create_SearchRule(omsg, temp, true); // reserve for pipe
 			conn->Send(omsg, true);
 		}
 
@@ -1646,11 +1608,11 @@ int cDCProto::DC_ExtJSON(cMessageDC *msg, cConnDC *conn)
 		{
 			if (StrCompare(msg->mStr, 0, conn->mpUser->mExtJSON.size(), conn->mpUser->mExtJSON) != 0) {
 				string _str;
-				_str.reserve(msg->mStr.size() + 1);
+				_str.reserve(msg->mStr.size() + 1); // first use, reserve for pipe
 				_str = msg->mStr;
 				mS->mUserList.SendToAllWithFeature(_str, eSF_EXTJSON2, mS->mC.delayed_myinfo, true);
-				mS->mInProgresUsers.SendToAllWithFeature(_str, eSF_EXTJSON2, mS->mC.delayed_myinfo, true);
-				conn->mpUser->mExtJSON = _str;
+				conn->mpUser->mExtJSON.reserve(msg->mStr.size());
+				conn->mpUser->mExtJSON = msg->mStr;
 			}
 		}
 	}
@@ -1680,8 +1642,7 @@ int cDCProto::DC_GetINFO(cMessageDC *msg, cConnDC *conn)
 
 	if (!user) {
 		if ((other != mS->mC.hub_security) && (other != mS->mC.opchat_name)) {
-			Create_Quit(omsg, other);
-			omsg.reserve(omsg.size() + 1);
+			Create_Quit(omsg, other, true); // reserve for pipe
 			conn->Send(omsg, true);
 		}
 
@@ -1691,14 +1652,12 @@ int cDCProto::DC_GetINFO(cMessageDC *msg, cConnDC *conn)
 	if ((conn->mpUser->mT.login < user->mT.login) && (mS->mTime < (user->mT.login + 60))) // if user logged in then ignore it, client is dcgui and one myinfo sent already
 		return 0;
 
-	if (mS->mC.optimize_userlist) { // eULO_GETINFO = true
-		conn->mpUser->mQueueUL.reserve(conn->mpUser->mQueueUL.size() + other.size() + 1);
-		conn->mpUser->mQueueUL.append(other);
-		conn->mpUser->mQueueUL.append(1, '|');
-	} else if (!(conn->mFeatures & eSF_NOGETINFO)) { // send it
-		omsg = GetMyInfo(user, conn->mpUser->mClass);
-		omsg.reserve(omsg.size() + 1);
-		conn->Send(omsg, true, false);
+	if (!(conn->mFeatures & eSF_NOGETINFO)) { // send it
+		if (omsg.capacity() < (user->mMyINFO.size() + 1))
+			omsg.reserve(user->mMyINFO.size() + 1); // reserve for pipe
+
+		omsg = user->mMyINFO;
+		conn->Send(omsg, true, false); // must be flushed, else user can wait for data forever
 	}
 
 	return 0;
@@ -1811,7 +1770,7 @@ int cDCProto::DC_To(cMessageDC *msg, cConnDC *conn)
 	#endif
 
 	string _str;
-	_str.reserve(msg->mStr.size() + 1);
+	_str.reserve(msg->mStr.size() + 1); // first use
 	_str = msg->mStr;
 	other->mxConn->Send(_str, true); // send it
 	return 0;
@@ -1911,12 +1870,13 @@ int cDCProto::DC_MCTo(cMessageDC *msg, cConnDC *conn)
 
 	string mcto;
 
-	if (other->mxConn->mFeatures & eSF_MCTO) // send as is if supported by client
+	if (other->mxConn->mFeatures & eSF_MCTO) { // send as is if supported by client
+		mcto.reserve(msg->mStr.size() + 1); // reserve for pipe
 		mcto = msg->mStr;
-	else // else convert to private main chat message
-		Create_Chat(mcto, conn->mpUser->mNick, text);
+	} else { // convert to private main chat message
+		Create_Chat(mcto, conn->mpUser->mNick, text, true); // reserve for pipe
+	}
 
-	mcto.reserve(mcto.size() + 1);
 	other->mxConn->Send(mcto, true); // send it
 	return 0;
 }
@@ -2001,7 +1961,7 @@ int cDCProto::DC_Chat(cMessageDC *msg, cConnDC *conn)
 	#endif
 
 	string _str;
-	_str.reserve(msg->mStr.size() + 1);
+	_str.reserve(msg->mStr.size() + 1); // first use, reserve for pipe
 	_str = msg->mStr;
 	mS->mChatUsers.SendToAll(_str, mS->mC.delayed_chat, true); // send it
 	return 0;
@@ -2062,7 +2022,7 @@ int cDCProto::DC_ConnectToMe(cMessageDC *msg, cConnDC *conn)
 		return -1;
 	}
 
-	if (StrCompare(nick, 0, conn->mpUser->mNick.size(), conn->mpUser->mNick) == 0) {
+	if (mS->mUserList.Nick2Hash(nick) == conn->mpUser->mNickHash) {
 		if (!mS->mC.hide_msg_badctm && !conn->mpUser->mHideCtmMsg)
 			mS->DCPublicHS(_("You're trying to connect to yourself."), conn);
 
@@ -2227,8 +2187,7 @@ int cDCProto::DC_ConnectToMe(cMessageDC *msg, cConnDC *conn)
 	}
 
 	string ctm;
-	Create_ConnectToMe(ctm, nick, addr, StringFrom(iport), extra);
-	ctm.reserve(ctm.size() + 1);
+	Create_ConnectToMe(ctm, nick, addr, StringFrom(iport), extra, true); // reserve for pipe
 	other->mxConn->Send(ctm, true); // send it
 	return 0;
 }
@@ -2271,7 +2230,7 @@ int cDCProto::DC_RevConnectToMe(cMessageDC *msg, cConnDC *conn)
 		return -2;
 	}
 
-	if (StrCompare(nick, 0, conn->mpUser->mNick.size(), conn->mpUser->mNick) == 0) {
+	if (mS->mUserList.Nick2Hash(nick) == conn->mpUser->mNickHash) {
 		if (!mS->mC.hide_msg_badctm && !conn->mpUser->mHideCtmMsg)
 			mS->DCPublicHS(_("You're trying to connect to yourself."), conn);
 
@@ -2366,7 +2325,7 @@ int cDCProto::DC_RevConnectToMe(cMessageDC *msg, cConnDC *conn)
 	#endif
 
 	string _str;
-	_str.reserve(msg->mStr.size() + 1);
+	_str.reserve(msg->mStr.size() + 1); // first use
 	_str = msg->mStr;
 	other->mxConn->Send(_str, true); // send it
 	return 0;
@@ -2612,15 +2571,19 @@ int cDCProto::DC_Search(cMessageDC *msg, cConnDC *conn)
 	}
 
 	string search, tths;
-	Create_Search(search, saddr, lims, spat);
+
+	if (mS->mC.use_search_filter)
+		Create_Search(search, saddr, lims, spat, false); // dont reserve for pipe, buffer is copied before sending
+	else
+		Create_Search(search, saddr, lims, spat, true); // reserve for pipe
 
 	if (mS->mC.use_search_filter && tth && (StrCompare(lims, 3, 8, "?0?9?") == 0)) { // also create short version to send to modern clients, note: limits length is checked above
 		spat = spat.substr(4);
 
-		if (passive)
-			Create_SP(tths, spat, nick);
+		if (passive) // dont reserve for pipe, buffer is copied before sending
+			Create_SP(tths, spat, nick, false);
 		else
-			Create_SA(tths, spat, saddr);
+			Create_SA(tths, spat, saddr, false);
 	}
 
 	if (mS->mC.use_search_filter) { // send it using filter
@@ -2637,8 +2600,6 @@ int cDCProto::DC_Search(cMessageDC *msg, cConnDC *conn)
 
 		mS->SearchToAll(conn, search, tths, passive, tth);
 	} else { // send it without filter, old search engine, note: short tth search command can not be used here
-		search.reserve(search.size() + 1);
-
 		if (passive)
 			mS->mActiveUsers.SendToAll(search, mS->mC.delayed_search, true);
 		else
@@ -2747,7 +2708,7 @@ int cDCProto::DC_SA(cMessageDC *msg, cConnDC *conn)
 	}
 
 	string search;
-	Create_Search(search, saddr, tth);
+	Create_Search(search, saddr, tth, false, false); // dont reserve for pipe, buffer is copied before sending
 
 	if (conn->mpUser->mClass < eUC_OPERATOR) { // if not operator
 		cUser::tFloodHashType Hash = 0; // check same message flood
@@ -2823,7 +2784,7 @@ int cDCProto::DC_SA(cMessageDC *msg, cConnDC *conn)
 	}
 
 	string tths;
-	Create_SA(tths, tth, saddr);
+	Create_SA(tths, tth, saddr, false); // dont reserve for pipe, buffer is copied before sending
 	mS->SearchToAll(conn, search, tths, false); // can send it only using filter
 	return 0;
 }
@@ -2912,7 +2873,7 @@ int cDCProto::DC_SP(cMessageDC *msg, cConnDC *conn)
 	}
 
 	string search;
-	Create_Search(search, nick, tth, true);
+	Create_Search(search, nick, tth, true, false); // dont reserve for pipe, buffer is copied before sending
 
 	if (conn->mpUser->mClass < eUC_OPERATOR) { // if not operator
 		cUser::tFloodHashType Hash = 0; // check same message flood
@@ -2981,7 +2942,7 @@ int cDCProto::DC_SP(cMessageDC *msg, cConnDC *conn)
 	conn->mpUser->mSearchNumber++; // set counter last of all
 	conn->mSRCounter = 0;
 	string tths;
-	Create_SP(tths, tth, nick);
+	Create_SP(tths, tth, nick, false); // dont reserve for pipe, buffer is copied before sending
 	mS->SearchToAll(conn, search, tths, true); // can send it only using filter
 	return 0;
 }
@@ -3007,18 +2968,18 @@ int cDCProto::DC_SR(cMessageDC *msg, cConnDC *conn)
 	if (!other || !other->mxConn || !other->mInList)
 		return -1; // silent filter
 
-	string sr(msg->mStr, 0, msg->mChunks[eCH_SR_TO].first - 1); // cut the end
-
 	#ifndef WITHOUT_PLUGINS
 		if (!mS->mCallBacks.mOnParsedMsgSR.CallAll(conn, msg))
 			return -2;
 	#endif
 
-	if (!mS->mC.max_passive_sr || (other->mxConn->mSRCounter++ < mS->mC.max_passive_sr)) { // send it
-		sr.reserve(sr.size() + 1);
-		other->mxConn->Send(sr, true, !mS->mC.delayed_search); // part of search, must be delayed too
-	}
+	if (mS->mC.max_passive_sr && (other->mxConn->mSRCounter++ >= mS->mC.max_passive_sr)) // dont send it
+		return 0;
 
+	string sr;
+	sr.reserve(msg->mChunks[eCH_SR_TO].first/* - 1 + 1*/); // first use, reserve for pipe
+	sr.assign(msg->mStr, 0, msg->mChunks[eCH_SR_TO].first - 1); // cut the end
+	other->mxConn->Send(sr, true, !mS->mC.delayed_search); // part of search, must be delayed too
 	return 0;
 }
 
@@ -3101,7 +3062,7 @@ int cDCProto::DCB_BotINFO(cMessageDC *msg, cConnDC *conn)
 	os << mS->mC.hub_encoding;
 
 	string info;
-	info.reserve(os.str().size() + 1);
+	info.reserve(os.str().size() + 1); // first use, reserve for pipe
 	info = os.str();
 	conn->Send(info, true, false);
 	conn->SetLSFlag(eLS_BOTINFO);
@@ -3144,7 +3105,7 @@ int cDCProto::DCO_UserIP(cMessageDC *msg, cConnDC *conn)
 		other = mS->mUserList.GetUserByNick(nick);
 
 		if (other && other->mxConn && other->mInList) {
-			back.reserve(back.size() + nick.size() + 1 + other->mxConn->AddrIP().size() + sep.size());
+			back.reserve(back.size() + nick.size() + 1 + other->mxConn->AddrIP().size() + sep.size()); // we are always reserving, no need for capacity check
 			back.append(nick);
 			back.append(1, ' ');
 			back.append(other->mxConn->AddrIP());
@@ -3153,8 +3114,7 @@ int cDCProto::DCO_UserIP(cMessageDC *msg, cConnDC *conn)
 	}
 
 	if (back.size()) {
-		Create_UserIP(omsg, back);
-		omsg.reserve(omsg.size() + 1);
+		Create_UserIP(omsg, back, true); // list is sent, no separator needed, reserve for pipe
 		conn->Send(omsg, true);
 	}
 
@@ -3222,10 +3182,9 @@ int cDCProto::DCO_OpForceMove(cMessageDC *msg, cConnDC *conn)
 
 	string ofm;
 	os << autosprintf(_("You are being redirected to %s because: %s"), dest.c_str(), msg->ChunkString(eCH_FM_REASON).c_str());
-	Create_PM(ofm, conn->mpUser->mNick, nick, conn->mpUser->mNick, os.str());
-	ofm += '|';
-	Create_ForceMove(ofm, dest, false); // must be last, user might not get reason otherwise
-	ofm.reserve(ofm.size() + 1);
+	Create_PM(ofm, conn->mpUser->mNick, nick, conn->mpUser->mNick, os.str(), true); // reserve for pipe
+	ofm.append(1, '|');
+	Create_ForceMove(ofm, dest, false, true); // must be last, user might not get reason otherwise, reserve for pipe
 	other->mxConn->Send(ofm, true); // send it
 	other->mxConn->CloseNice(5000, eCR_FORCEMOVE); // close after a while, user might not get redirect otherwise
 	return 0;
@@ -3344,19 +3303,21 @@ int cDCProto::DCO_WhoIP(cMessageDC *msg, cConnDC *conn)
 	if (CheckUserLogin(conn, msg))
 		return -1;
 
-	if (CheckUserRights(conn, msg, (conn->mpUser->mClass >= eUC_OPERATOR)))
+	if (CheckUserRights(conn, msg, (conn->mpUser->mClass >= mS->mC.user_ip_class)))
 		return -1;
 
 	if (CheckProtoSyntax(conn, msg))
 		return -1;
 
 	const string &ip = msg->ChunkString(eCH_1_PARAM);
-	string nicklist("$UsersWithIP "), sep("$$");
-	nicklist += ip;
-	nicklist += '$';
+	string nicklist, sep("$$");
+	nicklist.reserve(13 + ip.size() + 1);
+	nicklist.append("$UsersWithIP ");
+	nicklist.append(ip);
+	nicklist.append(1, '$');
 	const unsigned long num = cBanList::Ip2Num(ip);
 	mS->WhoIP(num, num, nicklist, sep, true);
-	nicklist.reserve(nicklist.size() + 1);
+	nicklist.reserve(nicklist.size() + 1); // reserve for pipe
 	conn->Send(nicklist, true);
 	return 0;
 }
@@ -3371,8 +3332,7 @@ int cDCProto::DCO_GetTopic(cMessageDC *msg, cConnDC *conn)
 
 	if (mS->mC.hub_topic.size()/* && (conn->mFeatures & eSF_HUBTOPIC)*/) {
 		string topic;
-		Create_HubTopic(topic, mS->mC.hub_topic);
-		topic.reserve(topic.size() + 1);
+		Create_HubTopic(topic, mS->mC.hub_topic, true); // reserve for pipe
 		conn->Send(topic, true);
 	}
 
@@ -3503,7 +3463,7 @@ bool cDCProto::CheckUserLogin(cConnDC *conn, cMessageDC *msg, bool inlist)
 	if (!conn)
 		return true;
 
-	if (conn->mpUser && (!inlist || conn->mpUser->mInList/* || (mS->mC.delayed_login && mS->mInProgresUsers.ContainsNick(conn->mpUser->mNick))*/))
+	if (conn->mpUser && (!inlist || conn->mpUser->mInList))
 		return false;
 
 	ostringstream rsn;
@@ -3847,7 +3807,7 @@ bool cDCProto::CheckProtoLen(cConnDC *conn, cMessageDC *msg)
 
 bool cDCProto::CheckUserNick(cConnDC *conn, const string &nick)
 {
-	if (StrCompare(nick, 0, conn->mpUser->mNick.size(), conn->mpUser->mNick) == 0)
+	if (mS->mUserList.Nick2Hash(nick) == conn->mpUser->mNickHash)
 		return false;
 
 	ostringstream os;
@@ -3885,17 +3845,7 @@ bool cDCProto::FindInSupports(const string &list, const string &flag)
 int cDCProto::NickList(cConnDC *conn)
 {
 	try {
-		bool complete_infolist = false;
 		string _str;
-
-		if (mS->mC.show_tags >= 2) // 2 = show to all
-			complete_infolist = true;
-
-		if (conn->mpUser && (conn->mpUser->mClass >= eUC_OPERATOR))
-			complete_infolist = true;
-
-		if (mS->mC.show_tags == 0) // 0 = hide to all
-			complete_infolist = false;
 
 		if (conn->GetLSFlag(eLS_LOGIN_DONE) != eLS_LOGIN_DONE)
 			conn->mNickListInProgress = true;
@@ -3904,52 +3854,43 @@ int cDCProto::NickList(cConnDC *conn)
 			if (conn->Log(3))
 				conn->LogStream() << "Sending MyINFO list" << endl;
 
-			_str = mS->mUserList.GetInfoList(complete_infolist);
-			_str.reserve(_str.size() + 1);
-			conn->Send(_str, true);
+			mS->mUserList.GetInfoList(_str, true); // reserve for pipe
+			conn->Send(_str, false); // pipe was already added by list generator
+
 		} else if (conn->mFeatures & eSF_NOGETINFO) {
 			if (conn->Log(3))
 				conn->LogStream() << "Sending MyINFO list" << endl;
 
-			_str = mS->mUserList.GetNickList();
-			_str.reserve(_str.size() + 1);
+			mS->mUserList.GetNickList(_str, true); // reserve for pipe
 			conn->Send(_str, true);
+			mS->mUserList.GetInfoList(_str, true); // reserve for pipe
+			conn->Send(_str, false); // pipe was already added by list generator
 
-			_str = mS->mUserList.GetInfoList(complete_infolist);
-			_str.reserve(_str.size() + 1);
-			conn->Send(_str, true);
 		} else {
 			if (conn->Log(3))
 				conn->LogStream() << "Sending Nicklist" << endl;
 
-			_str = mS->mUserList.GetNickList();
-			_str.reserve(_str.size() + 1);
+			mS->mUserList.GetNickList(_str, true); // reserve for pipe
 			conn->Send(_str, true);
 		}
 
 		if (mS->mOpList.Size()) { // send $OpList
-			_str = mS->mOpList.GetNickList();
-			_str.reserve(_str.size() + 1);
+			mS->mOpList.GetNickList(_str, true); // reserve for pipe
 			conn->Send(_str, true);
 		}
 
 		if (mS->mRobotList.Size() && (conn->mFeatures & eSF_BOTLIST)) { // send $BotList
-			_str = mS->mRobotList.GetNickList();
-			_str.reserve(_str.size() + 1);
+			mS->mRobotList.GetNickList(_str, true); // reserve for pipe
 			conn->Send(_str, true);
 		}
 
 		if (mS->mC.send_user_ip && conn->mpUser && (conn->mFeatures & eSF_USERIP2)) { // send $UserIP
 			if (conn->mpUser->mClass >= mS->mC.user_ip_class) { // full list
-				_str = mS->mUserList.GetIPList();
-				_str.reserve(_str.size() + 1);
+				mS->mUserList.GetIPList(_str, true); // reserve for pipe
 				conn->Send(_str, true);
+
 			} else { // own ip only
-				_str.clear();
-				cCompositeUserCollection::ufDoIpList DoUserIP(_str);
-				DoUserIP.Clear();
-				DoUserIP(conn->mpUser);
-				_str.reserve(_str.size() + 1);
+				mS->mP.Create_UserIP(_str, conn->mpUser->mNick, conn->AddrIP(), true); // reserve for pipe
 				conn->Send(_str, true);
 			}
 		}
@@ -4074,31 +4015,14 @@ bool cDCProto::CheckChatMsg(const string &text, cConnDC *conn)
 	return true;
 }
 
-const string &cDCProto::GetMyInfo(cUserBase *User, int ForClass)
+void cDCProto::Create_MyINFO(string &dest, const string &nick, const string &desc, const string &speed, const string &mail, const string &share, const bool pipe)
 {
-	if ((mS->mC.show_tags + int(ForClass >= eUC_OPERATOR)) >= 2)
-		return User->mMyINFO;
-	else
-		return User->mMyINFO_basic;
-}
+	if (dest.size())
+		dest.clear();
 
-/*
-void cDCProto::Append_MyInfoList(string &dest, const string &MyINFO, const string &MyINFO_basic, bool DoBasic)
-{
-	if (dest[dest.size() - 1] == '|')
-		dest.resize(dest.size() - 1);
+	if (dest.capacity() < (13 + nick.size() + 1 + desc.size() + 3 + speed.size() + 1 + mail.size() + 1 + share.size() + 1 + (pipe ? 1 : 0)))
+		dest.reserve(13 + nick.size() + 1 + desc.size() + 3 + speed.size() + 1 + mail.size() + 1 + share.size() + 1 + (pipe ? 1 : 0));
 
-	if (DoBasic)
-		dest.append(MyINFO_basic);
-	else
-		dest.append(MyINFO);
-}
-*/
-
-void cDCProto::Create_MyINFO(string &dest, const string &nick, const string &desc, const string &speed, const string &mail, const string &share)
-{
-	dest.clear();
-	dest.reserve(13 + nick.size() + 1 + desc.size() + 3 + speed.size() + 1 + mail.size() + 1 + share.size() + 1);
 	dest.append("$MyINFO $ALL ");
 	dest.append(nick);
 	dest.append(1, ' ');
@@ -4112,20 +4036,58 @@ void cDCProto::Create_MyINFO(string &dest, const string &nick, const string &des
 	dest.append(1, '$');
 }
 
-void cDCProto::Create_Chat(string &dest, const string &nick, const string &text)
+void cDCProto::Create_Lock(string &dest, const string &lock, const string &name, const string &vers, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(1 + nick.size() + 2 + text.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (6 + lock.size() + 4 + name.size() + 1 + vers.size() + (pipe ? 1 : 0)))
+		dest.reserve(6 + lock.size() + 4 + name.size() + 1 + vers.size() + (pipe ? 1 : 0));
+
+	dest.append("$Lock ");
+	dest.append(lock);
+	dest.append(" Pk=");
+	dest.append(name);
+	dest.append(1, ' ');
+	dest.append(vers);
+}
+
+void cDCProto::Create_Chat(string &dest, const string &nick, const string &text, const bool pipe)
+{
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (1 + nick.size() + 2 + text.size() + (pipe ? 1 : 0)))
+		dest.reserve(1 + nick.size() + 2 + text.size() + (pipe ? 1 : 0));
+
 	dest.append(1, '<');
 	dest.append(nick);
 	dest.append("> ");
 	dest.append(text);
 }
 
-void cDCProto::Create_PM(string &dest,const string &from, const string &to, const string &sign, const string &text)
+void cDCProto::Create_Me(string &dest, const string &nick, const string &text, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(5 + to.size() + 7 + from.size() + 3 + sign.size() + 2 + text.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (3 + nick.size() + 1 + text.size() + (pipe ? 1 : 0)))
+		dest.reserve(3 + nick.size() + 1 + text.size() + (pipe ? 1 : 0));
+
+	dest.append("** ");
+	dest.append(nick);
+	dest.append(1, ' ');
+	dest.append(text);
+}
+
+void cDCProto::Create_PM(string &dest,const string &from, const string &to, const string &sign, const string &text, const bool pipe)
+{
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (5 + to.size() + 7 + from.size() + 3 + sign.size() + 2 + text.size() + (pipe ? 1 : 0)))
+		dest.reserve(5 + to.size() + 7 + from.size() + 3 + sign.size() + 2 + text.size() + (pipe ? 1 : 0));
+
 	dest.append("$To: ");
 	dest.append(to);
 	dest.append(" From: ");
@@ -4137,12 +4099,20 @@ void cDCProto::Create_PM(string &dest,const string &from, const string &to, cons
 }
 
 
-void cDCProto::Create_PMForBroadcast(string &start, string &end, const string &from, const string &sign, const string &text)
+void cDCProto::Create_PMForBroadcast(string &start, string &end, const string &from, const string &sign, const string &text, const bool pipe)
 {
-	start.clear();
-	start.reserve(5);
-	end.clear();
-	end.reserve(7 + from.size() + 3 + sign.size() + 2 + text.size());
+	if (start.size())
+		start.clear();
+
+	if (end.size())
+		end.clear();
+
+	if (start.capacity() < (5))
+		start.reserve(5);
+
+	if (end.capacity() < (7 + from.size() + 3 + sign.size() + 2 + text.size() + (pipe ? 1 : 0)))
+		end.reserve(7 + from.size() + 3 + sign.size() + 2 + text.size() + (pipe ? 1 : 0));
+
 	start.append("$To: ");
 	end.append(" From: ");
 	end.append(from);
@@ -4152,14 +4122,18 @@ void cDCProto::Create_PMForBroadcast(string &start, string &end, const string &f
 	end.append(text);
 }
 
-void cDCProto::Create_HubName(string &dest, const string &name, const string &topic)
+void cDCProto::Create_HubName(string &dest, const string &name, const string &topic, const bool pipe)
 {
-	dest.clear();
+	if (dest.size())
+		dest.clear();
 
-	if (topic.size())
-		dest.reserve(9 + name.size() + 3 + topic.size());
-	else
-		dest.reserve(9 + name.size());
+	if (topic.size()) {
+		if (dest.capacity() < (9 + name.size() + 3 + topic.size() + (pipe ? 1 : 0)))
+			dest.reserve(9 + name.size() + 3 + topic.size() + (pipe ? 1 : 0));
+	} else {
+		if (dest.capacity() < (9 + name.size() + (pipe ? 1 : 0)))
+			dest.reserve(9 + name.size() + (pipe ? 1 : 0));
+	}
 
 	dest.append("$HubName ");
 	dest.append(name);
@@ -4170,54 +4144,78 @@ void cDCProto::Create_HubName(string &dest, const string &name, const string &to
 	}
 }
 
-void cDCProto::Create_HubTopic(string &dest, const string &topic)
+void cDCProto::Create_HubTopic(string &dest, const string &topic, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(10 + topic.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (10 + topic.size() + (pipe ? 1 : 0)))
+		dest.reserve(10 + topic.size() + (pipe ? 1 : 0));
+
 	dest.append("$HubTopic ");
 	dest.append(topic);
 }
 
-void cDCProto::Create_Quit(string &dest, const string &nick)
+void cDCProto::Create_Quit(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(6 + nick.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (6 + nick.size() + (pipe ? 1 : 0)))
+		dest.reserve(6 + nick.size() + (pipe ? 1 : 0));
+
 	dest.append("$Quit ");
 	dest.append(nick);
 }
 
-void cDCProto::Create_Hello(string &dest, const string &nick)
+void cDCProto::Create_Hello(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(7 + nick.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (7 + nick.size() + (pipe ? 1 : 0)))
+		dest.reserve(7 + nick.size() + (pipe ? 1 : 0));
+
 	dest.append("$Hello ");
 	dest.append(nick);
 }
 
-void cDCProto::Create_LogedIn(string &dest, const string &nick)
+void cDCProto::Create_LogedIn(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(9 + nick.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (9 + nick.size() + (pipe ? 1 : 0)))
+		dest.reserve(9 + nick.size() + (pipe ? 1 : 0));
+
 	dest.append("$LogedIn ");
 	dest.append(nick);
 }
 
-void cDCProto::Create_ValidateDenide(string &dest, const string &nick)
+void cDCProto::Create_ValidateDenide(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(16 + nick.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (16 + nick.size() + (pipe ? 1 : 0)))
+		dest.reserve(16 + nick.size() + (pipe ? 1 : 0));
+
 	dest.append("$ValidateDenide ");
 	dest.append(nick);
 }
 
-void cDCProto::Create_BadNick(string &dest, const string &id, const string &par)
+void cDCProto::Create_BadNick(string &dest, const string &id, const string &par, const bool pipe)
 {
-	dest.clear();
+	if (dest.size())
+		dest.clear();
 
-	if (par.size())
-		dest.reserve(9 + id.size() + 1 + par.size());
-	else
-		dest.reserve(9 + id.size());
+	if (par.size()) {
+		if (dest.capacity() < (9 + id.size() + 1 + par.size() + (pipe ? 1 : 0)))
+			dest.reserve(9 + id.size() + 1 + par.size() + (pipe ? 1 : 0));
+	} else {
+		if (dest.capacity() < (9 + id.size() + (pipe ? 1 : 0)))
+			dest.reserve(9 + id.size() + (pipe ? 1 : 0));
+	}
 
 	dest.append("$BadNick ");
 	dest.append(id);
@@ -4228,66 +4226,92 @@ void cDCProto::Create_BadNick(string &dest, const string &id, const string &par)
 	}
 }
 
-void cDCProto::Create_NickList(string &dest, const string &nick)
+void cDCProto::Create_NickList(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(10 + nick.size() + 2);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (10 + nick.size() + 2 + (pipe ? 1 : 0)))
+		dest.reserve(10 + nick.size() + 2 + (pipe ? 1 : 0));
+
 	dest.append("$NickList ");
 	dest.append(nick);
 	dest.append("$$");
 }
 
-void cDCProto::Create_OpList(string &dest, const string &nick)
+void cDCProto::Create_OpList(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(8 + nick.size() + 2);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (8 + nick.size() + 2 + (pipe ? 1 : 0)))
+		dest.reserve(8 + nick.size() + 2 + (pipe ? 1 : 0));
+
 	dest.append("$OpList ");
 	dest.append(nick);
 	dest.append("$$");
 }
 
-void cDCProto::Create_BotList(string &dest, const string &nick)
+void cDCProto::Create_BotList(string &dest, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(9 + nick.size() + 2);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (9 + nick.size() + 2 + (pipe ? 1 : 0)))
+		dest.reserve(9 + nick.size() + 2 + (pipe ? 1 : 0));
+
 	dest.append("$BotList ");
 	dest.append(nick);
 	dest.append("$$");
 }
 
-void cDCProto::Create_Key(string &dest, const string &key)
+void cDCProto::Create_Key(string &dest, const string &key, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(5 + key.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (5 + key.size() + (pipe ? 1 : 0)))
+		dest.reserve(5 + key.size() + (pipe ? 1 : 0));
+
 	dest.append("$Key ");
 	dest.append(key);
 }
 
-void cDCProto::Create_FailOver(string &dest, const string &addr)
+void cDCProto::Create_FailOver(string &dest, const string &addr, const bool pipe)
 {
 	dest.clear();
-	dest.reserve(10 + addr.size());
+
+	if (dest.capacity() < (10 + addr.size() + (pipe ? 1 : 0)))
+		dest.reserve(10 + addr.size() + (pipe ? 1 : 0));
+
 	dest.append("$FailOver ");
 	dest.append(addr);
 }
 
-void cDCProto::Create_ForceMove(string &dest, const string &addr, bool clear)
+void cDCProto::Create_ForceMove(string &dest, const string &addr, const bool clear, const bool pipe)
 {
 	if (clear) {
-		dest.clear();
-		dest.reserve(11 + addr.size());
-	} else {
-		dest.reserve(dest.size() + 11 + addr.size());
+		if (dest.size())
+			dest.clear();
+
+		if (dest.capacity() < (11 + addr.size() + (pipe ? 1 : 0)))
+			dest.reserve(11 + addr.size() + (pipe ? 1 : 0));
+	} else if (dest.capacity() < (dest.size() + 11 + addr.size() + (pipe ? 1 : 0))) {
+		dest.reserve(dest.size() + 11 + addr.size() + (pipe ? 1 : 0));
 	}
 
 	dest.append("$ForceMove ");
 	dest.append(addr);
 }
 
-void cDCProto::Create_ConnectToMe(string &dest, const string &nick, const string &addr, const string &port, const string &extra)
+void cDCProto::Create_ConnectToMe(string &dest, const string &nick, const string &addr, const string &port, const string &extra, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(13 + nick.size() + 1 + addr.size() + 1 + port.size() + extra.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (13 + nick.size() + 1 + addr.size() + 1 + port.size() + extra.size() + (pipe ? 1 : 0)))
+		dest.reserve(13 + nick.size() + 1 + addr.size() + 1 + port.size() + extra.size() + (pipe ? 1 : 0));
+
 	dest.append("$ConnectToMe ");
 	dest.append(nick);
 	dest.append(1, ' ');
@@ -4297,10 +4321,14 @@ void cDCProto::Create_ConnectToMe(string &dest, const string &nick, const string
 	dest.append(extra);
 }
 
-void cDCProto::Create_Search(string &dest, const string &addr, const string &lims, const string &spat)
+void cDCProto::Create_Search(string &dest, const string &addr, const string &lims, const string &spat, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(8 + addr.size() + 1 + lims.size() + spat.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (8 + addr.size() + 1 + lims.size() + spat.size() + (pipe ? 1 : 0)))
+		dest.reserve(8 + addr.size() + 1 + lims.size() + spat.size() + (pipe ? 1 : 0));
+
 	dest.append("$Search ");
 	dest.append(addr);
 	dest.append(1, ' ');
@@ -4308,14 +4336,18 @@ void cDCProto::Create_Search(string &dest, const string &addr, const string &lim
 	dest.append(spat);
 }
 
-void cDCProto::Create_Search(string &dest, const string &addr, const string &tth, bool pas)
+void cDCProto::Create_Search(string &dest, const string &addr, const string &tth, const bool pas, const bool pipe)
 {
-	dest.clear();
+	if (dest.size())
+		dest.clear();
 
-	if (pas)
-		dest.reserve(8 + 4 + addr.size() + 13 + tth.size());
-	else
-		dest.reserve(8 + addr.size() + 13 + tth.size());
+	if (pas) {
+		if (dest.capacity() < (8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
+			dest.reserve(8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0));
+	} else {
+		if (dest.capacity() < (8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
+			dest.reserve(8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0));
+	}
 
 	dest.append("$Search ");
 
@@ -4327,89 +4359,146 @@ void cDCProto::Create_Search(string &dest, const string &addr, const string &tth
 	dest.append(tth);
 }
 
-void cDCProto::Create_SA(string &dest, const string &tth, const string &addr)
+void cDCProto::Create_SA(string &dest, const string &tth, const string &addr, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(4 + tth.size() + 1 + addr.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0)))
+		dest.reserve(4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0));
+
 	dest.append("$SA ");
 	dest.append(tth);
 	dest.append(1, ' ');
 	dest.append(addr);
 }
 
-void cDCProto::Create_SP(string &dest, const string &tth, const string &nick)
+void cDCProto::Create_SP(string &dest, const string &tth, const string &nick, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(4 + tth.size() + 1 + nick.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0)))
+		dest.reserve(4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0));
+
 	dest.append("$SP ");
 	dest.append(tth);
 	dest.append(1, ' ');
 	dest.append(nick);
 }
 
-void cDCProto::Create_UserIP(string &dest, const string &list)
+void cDCProto::Create_UserIP(string &dest, const string &list, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(8 + list.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (8 + list.size() + (pipe ? 1 : 0)))
+		dest.reserve(8 + list.size() + (pipe ? 1 : 0));
+
 	dest.append("$UserIP ");
 	dest.append(list);
 }
 
-void cDCProto::Create_GetPass(string &dest)
+void cDCProto::Create_UserIP(string &dest, const string &nick, const string &addr, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(8);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (8 + nick.size() + 1 + addr.size() + 2 + (pipe ? 1 : 0)))
+		dest.reserve(8 + nick.size() + 1 + addr.size() + 2 + (pipe ? 1 : 0));
+
+	dest.append("$UserIP ");
+	dest.append(nick);
+	dest.append(1, ' ');
+	dest.append(addr);
+	dest.append("$$");
+}
+
+void cDCProto::Create_GetPass(string &dest, const bool pipe)
+{
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (8 + (pipe ? 1 : 0)))
+		dest.reserve(8 + (pipe ? 1 : 0));
+
 	dest.append("$GetPass");
 }
 
-void cDCProto::Create_BadPass(string &dest)
+void cDCProto::Create_BadPass(string &dest, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(8);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (8 + (pipe ? 1 : 0)))
+		dest.reserve(8 + (pipe ? 1 : 0));
+
 	dest.append("$BadPass");
 }
 
-void cDCProto::Create_GetHubURL(string &dest)
+void cDCProto::Create_GetHubURL(string &dest, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(10);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (10 + (pipe ? 1 : 0)))
+		dest.reserve(10 + (pipe ? 1 : 0));
+
 	dest.append("$GetHubURL");
 }
 
-void cDCProto::Create_HubIsFull(string &dest)
+void cDCProto::Create_HubIsFull(string &dest, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(10);
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (10 + (pipe ? 1 : 0)))
+		dest.reserve(10 + (pipe ? 1 : 0));
+
 	dest.append("$HubIsFull");
 }
 
-void cDCProto::Create_Supports(string &dest, const string &flags)
+void cDCProto::Create_Supports(string &dest, const string &flags, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(10 + flags.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (10 + flags.size() + (pipe ? 1 : 0)))
+		dest.reserve(10 + flags.size() + (pipe ? 1 : 0));
+
 	dest.append("$Supports ");
 	dest.append(flags);
 }
 
-void cDCProto::Create_NickRule(string &dest, const string &rules)
+void cDCProto::Create_NickRule(string &dest, const string &rules, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(10 + rules.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (10 + rules.size() + (pipe ? 1 : 0)))
+		dest.reserve(10 + rules.size() + (pipe ? 1 : 0));
+
 	dest.append("$NickRule ");
 	dest.append(rules);
 }
 
-void cDCProto::Create_SearchRule(string &dest, const string &rules)
+void cDCProto::Create_SearchRule(string &dest, const string &rules, const bool pipe)
 {
-	dest.clear();
-	dest.reserve(12 + rules.size());
+	if (dest.size())
+		dest.clear();
+
+	if (dest.capacity() < (12 + rules.size() + (pipe ? 1 : 0)))
+		dest.reserve(12 + rules.size() + (pipe ? 1 : 0));
+
 	dest.append("$SearchRule ");
 	dest.append(rules);
 }
 
-cConnType *cDCProto::ParseSpeed(const string &uspeed)
+cConnType* cDCProto::ParseSpeed(const string &uspeed)
 {
-	string speed(uspeed, 0, uspeed.size() - 1);
+	string speed;
+	speed.reserve(uspeed.size() - 1);
+	speed.assign(uspeed, 0, uspeed.size() - 1);
 	return mS->mConnTypes->FindConnType(speed);
 }
 

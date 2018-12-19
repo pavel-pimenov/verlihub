@@ -65,19 +65,26 @@ cRoom::~cRoom()
 
 void cRoom::OnLoad()
 {
-	string desc("Chatroom: "), speed("\x1"), mail, share("0");
+	string desc("Chatroom"), speed("\x1"), mail, share("0");
 
 	if (!mUsers) {
-		mUsers = new cUserCollection(true, false);
+		mUsers = new cUserCollection(true, false, false);
 		mUsers->SetNickListSeparator("\r\n");
 	}
 
 	if (!mChatRoom) {
 		mChatRoom = new cXChatRoom(mNick, this);
-		mChatRoom->mClass = tUserCl(10);
-		desc += mTopic;
-		nProtocol::cDCProto::Create_MyINFO(mChatRoom->mMyINFO, mNick, desc, speed, mail, share);
-		mChatRoom->mMyINFO_basic = mChatRoom->mMyINFO;
+		mChatRoom->mClass = tUserCl(3);
+
+		if (mTopic.size()) {
+			if (desc.capacity() < (desc.size() + 2 + mTopic.size()))
+				desc.reserve(desc.size() + 2 + mTopic.size());
+
+			desc.append(": ");
+			desc.append(mTopic);
+		}
+
+		mServer->mP.Create_MyINFO(mChatRoom->mMyINFO, mNick, desc, speed, mail, share, false); // dont reserve for pipe, we are not sending this
 		mPlugin->AddRobot(mChatRoom);
 	}
 }
