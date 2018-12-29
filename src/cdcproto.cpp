@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -63,8 +63,10 @@ cMessageParser *cDCProto::CreateParser()
 
 void cDCProto::DeleteParser(cMessageParser *OldParser)
 {
-	if (OldParser != NULL)
+	if (OldParser != NULL) {
 		delete OldParser;
+		OldParser = NULL;
+	}
 }
 
 int cDCProto::TreatMsg(cMessageParser *pMsg, cAsyncConn *pConn)
@@ -347,7 +349,7 @@ int cDCProto::DC_Key(cMessageDC *msg, cConnDC *conn)
 	conn->SetLSFlag(eLS_KEYOK);
 	conn->ClearTimeOut(eTO_KEY);
 	conn->SetTimeOut(eTO_VALNICK, mS->mC.timeout_length[eTO_VALNICK], mS->mTime);
-	conn->mT.key.Get();
+	//conn->mT.key = mS->mTime;
 	conn->mLock.clear(); // not needed anymore
 	ShrinkStringToFit(conn->mLock);
 	return 0;
@@ -719,7 +721,7 @@ int cDCProto::DC_ValidateNick(cMessageDC *msg, cConnDC *conn)
 		}
 	}
 
-	try {
+	//try {
 		cUser *NewUser = new cUser(nick);
 
 		if (!conn->SetUser(NewUser)) {
@@ -733,7 +735,7 @@ int cDCProto::DC_ValidateNick(cMessageDC *msg, cConnDC *conn)
 				return -2;
 			}
 		#endif
-
+	/*
 	} catch (...) {
 		if (mS->ErrLog(2))
 			mS->LogStream() << "Unhandled exception in cServerDC::DC_ValidateNick" << endl;
@@ -744,6 +746,7 @@ int cDCProto::DC_ValidateNick(cMessageDC *msg, cConnDC *conn)
 		mS->ConnCloseMsg(conn, _("Undefined error occurred."), 1000);
 		return -1;
 	}
+	*/
 
 	if (conn->mpUser) {
 		if (conn->mRegInfo && (conn->mRegInfo->mClass == eUC_PINGER)) {
@@ -1020,6 +1023,9 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 	int tag_result = 0;
 	string myinfo_speed = msg->ChunkString(eCH_MI_SPEED);
 
+	if (myinfo_speed.empty())
+		myinfo_speed = "\x1";
+
 	if (!conn->mConnType) // parse connection, it will be used below
 		conn->mConnType = ParseSpeed(myinfo_speed);
 
@@ -1040,21 +1046,21 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 		return -1;
 	}
 
-	bool was_passive = conn->mpUser->IsPassive; // user might have changed his mode
+	bool was_passive = conn->mpUser->mPassive; // user might have changed his mode
 
 	switch (dc_tag->mClientMode) {
 		case eCM_NOTAG:
 		case eCM_PASSIVE:
 		case eCM_SOCK5:
 		case eCM_OTHER:
-			conn->mpUser->IsPassive = true;
+			conn->mpUser->mPassive = true;
 			break;
 		case eCM_ACTIVE:
-			conn->mpUser->IsPassive = false;
+			conn->mpUser->mPassive = false;
 			break;
 	}
 
-	if (conn->mpUser->mInList && (was_passive != conn->mpUser->IsPassive)) { // change user mode if differs and not first time
+	if (conn->mpUser->mInList && (was_passive != conn->mpUser->mPassive)) { // change user mode if differs and not first time
 		if (was_passive) {
 			if (mS->mPassiveUsers.ContainsHash(conn->mpUser->mNickHash))
 				mS->mPassiveUsers.RemoveByHash(conn->mpUser->mNickHash);
@@ -1072,7 +1078,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 
 	string omsg;
 
-	if (conn->mpUser->IsPassive && (conn->mpUser->mClass != eUC_PINGER) && (conn->mpUser->mClass < eUC_OPERATOR) && (mS->mC.max_users_passive > -1) && (mS->mPassiveUsers.Size() > (unsigned int)mS->mC.max_users_passive)) { // passive user limit
+	if (conn->mpUser->mPassive && (conn->mpUser->mClass != eUC_PINGER) && (conn->mpUser->mClass < eUC_OPERATOR) && (mS->mC.max_users_passive > -1) && (mS->mPassiveUsers.Size() > (unsigned int)mS->mC.max_users_passive)) { // passive user limit
 		os << autosprintf(_("Passive user limit exceeded at %d users. Try again later or set up an active connection."), mS->mPassiveUsers.Size());
 
 		if (conn->Log(2))
@@ -1122,7 +1128,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 		min_share_a = min_share;
 		min_share_p = (__int64)(min_share * mS->mC.min_share_factor_passive);
 
-		if (conn->mpUser->IsPassive)
+		if (conn->mpUser->mPassive)
 			min_share = min_share_p;
 
 		//if (conn->mpUser->Can(eUR_NOSHARE, mS->mTime.Sec()))
@@ -1159,7 +1165,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 			}
 
 			if (temp_min_share) {
-				if (conn->mpUser->IsPassive)
+				if (conn->mpUser->mPassive)
 					temp_min_share = (__int64)(temp_min_share * mS->mC.min_share_factor_passive);
 
 				if (share_check < temp_min_share) {
@@ -1169,7 +1175,7 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 			}
 		}
 
-		int use_hub_class = ((conn->mpUser->IsPassive) ? mS->mC.min_class_use_hub_passive : mS->mC.min_class_use_hub);
+		int use_hub_class = ((conn->mpUser->mPassive) ? mS->mC.min_class_use_hub_passive : mS->mC.min_class_use_hub);
 
 		if (conn->mpUser->mClass < use_hub_class) {
 			conn->mpUser->SetRight(eUR_SEARCH, 0);
@@ -1326,17 +1332,10 @@ int cDCProto::DC_MyINFO(cMessageDC *msg, cConnDC *conn)
 
 	delete dc_tag; // dc tag is no longer used
 	dc_tag = NULL;
-	myinfo_speed = msg->ChunkString(eCH_MI_SPEED);
+	conn->mpUser->mMyFlag = myinfo_speed[myinfo_speed.size() - 1];
 
-	if (myinfo_speed.size()) {
-		conn->mpUser->mMyFlag = myinfo_speed[myinfo_speed.size() - 1];
-
-		if (!mS->mC.show_speed) // hide speed but keep status byte
-			myinfo_speed.assign(myinfo_speed, myinfo_speed.size() - 1, -1);
-	} else {
-		myinfo_speed = "\x1";
-		conn->mpUser->mMyFlag = myinfo_speed[0];
-	}
+	if (!mS->mC.show_speed && (myinfo_speed.size() > 1)) // hide speed but keep status byte
+		myinfo_speed.assign(myinfo_speed, myinfo_speed.size() - 1, -1);
 
 	if (mS->mC.show_email) // hide email
 		myinfo_email = msg->ChunkString(eCH_MI_MAIL);
@@ -1555,7 +1554,7 @@ int cDCProto::DC_IN(cMessageDC *msg, cConnDC *conn)
 		}
 	}
 
-	if (back_in.empty())
+	if (back_in.empty()) // todo: Expression 'back_in.empty()' is always true - this needs to be implemented for it to work
 		return 0;
 
 	/*
@@ -2081,7 +2080,7 @@ int cDCProto::DC_ConnectToMe(cMessageDC *msg, cConnDC *conn)
 		return -4;
 	}
 
-	if (mS->mC.filter_lan_requests && (conn->mpUser->mIsLan != other->mIsLan)) { // filter lan to wan and reverse
+	if (mS->mC.filter_lan_requests && (conn->mpUser->mLan != other->mLan)) { // filter lan to wan and reverse
 		if (!mS->mC.hide_msg_badctm && !conn->mpUser->mHideCtmMsg) {
 			os << autosprintf(_("You can't download from this user because one of you is in a LAN: %s"), nick.c_str());
 			mS->DCPublicHS(os.str(), conn);
@@ -2237,7 +2236,7 @@ int cDCProto::DC_RevConnectToMe(cMessageDC *msg, cConnDC *conn)
 		return -2;
 	}
 
-	if (other->IsPassive && !(other->mMyFlag & eMF_NAT)) { // passive request to passive user, allow if other user supports nat connection
+	if (other->mPassive && !(other->mMyFlag & eMF_NAT)) { // passive request to passive user, allow if other user supports nat connection
 		if (!mS->mC.hide_msg_badctm && !conn->mpUser->mHideCtmMsg) {
 			os << autosprintf(_("You can't download from this user, because he is also in passive mode: %s"), nick.c_str());
 			mS->DCPublicHS(os.str(), conn);
@@ -3104,11 +3103,19 @@ int cDCProto::DCO_UserIP(cMessageDC *msg, cConnDC *conn)
 
 		other = mS->mUserList.GetUserByNick(nick);
 
-		if (other && other->mxConn && other->mInList) {
-			back.reserve(back.size() + nick.size() + 1 + other->mxConn->AddrIP().size() + sep.size()); // we are always reserving, no need for capacity check
-			back.append(nick);
-			back.append(1, ' ');
-			back.append(other->mxConn->AddrIP());
+		if (other && other->mInList) {
+			if (other->mxConn) { // real user
+				back.reserve(back.size() + nick.size() + 1 + other->mxConn->AddrIP().size() + sep.size()); // we are always reserving, no need for capacity check
+				back.append(nick);
+				back.append(1, ' ');
+				back.append(other->mxConn->AddrIP());
+
+			} else { // bots have local ip
+				back.reserve(back.size() + nick.size() + 1 + 9 + sep.size()); // we are always reserving, no need for capacity check
+				back.append(nick);
+				back.append(" 127.0.0.1"); // size() = 1 + 9
+			}
+
 			back.append(sep);
 		}
 	}
@@ -3482,7 +3489,7 @@ bool cDCProto::CheckUserLogin(cConnDC *conn, cMessageDC *msg, bool inlist)
 		rsn << _("Invalid login sequence, your client must validate nick first.");
 
 	if (conn->Log(1)) {
-		if (msg && msg->mStr.size())
+		if (pref.size())
 			conn->LogStream() << "Invalid login sequence: " << msg->mStr << endl;
 		else
 			conn->LogStream() << "Invalid login sequence" << endl;
@@ -3844,11 +3851,13 @@ bool cDCProto::FindInSupports(const string &list, const string &flag)
 
 int cDCProto::NickList(cConnDC *conn)
 {
-	try {
+	//try {
 		string _str;
 
+		/*
 		if (conn->GetLSFlag(eLS_LOGIN_DONE) != eLS_LOGIN_DONE)
 			conn->mNickListInProgress = true;
+		*/
 
 		if (conn->mFeatures & eSF_NOHELLO) {
 			if (conn->Log(3))
@@ -3901,6 +3910,7 @@ int cDCProto::NickList(cConnDC *conn)
 			if (mS->CollectExtJSON(_str, conn))
 				conn->Send(_str, false); // no pipe, its already added by collector
 		}
+	/*
 	} catch (...) {
 		if (conn->ErrLog(2))
 			conn->LogStream() << "Exception in cDCProto::NickList" << endl;
@@ -3908,6 +3918,7 @@ int cDCProto::NickList(cConnDC *conn)
 		conn->CloseNow();
 		return -1;
 	}
+	*/
 
 	return 0;
 }
@@ -4497,8 +4508,12 @@ void cDCProto::Create_SearchRule(string &dest, const string &rules, const bool p
 cConnType* cDCProto::ParseSpeed(const string &uspeed)
 {
 	string speed;
-	speed.reserve(uspeed.size() - 1);
-	speed.assign(uspeed, 0, uspeed.size() - 1);
+
+	if (uspeed.size() > 1) {
+		speed.reserve(uspeed.size() - 1);
+		speed.assign(uspeed, 0, uspeed.size() - 1);
+	}
+
 	return mS->mConnTypes->FindConnType(speed);
 }
 
@@ -4782,7 +4797,7 @@ void cDCProto::EscapeChars(const char *buf, int len, string &dest, bool WithDCN)
 				} else {
 					if (c < 10)
 						olen = 7;
-					else if ((c > 10) && (c < 100))
+					else if (c < 100) // c can not be == 10 here
 						olen = 6;
 
 					os.width(olen);
@@ -4829,6 +4844,8 @@ void cDCProto::Lock2Key(const string &Lock, string &fkey)
 	cDCProto::EscapeChars(key, len, fkey, true);
 	delete [] key;
 	delete [] lock;
+	key = NULL;
+	lock = NULL;
 }
 
 	}; // namespace nProtocol

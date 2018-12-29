@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -58,11 +58,13 @@ void cDCConf::AddVars()
 	Add("hub_failover_hosts", hub_failover_hosts, string(""));
 	Add("listen_ip",mS.mAddr,string("0.0.0.0"));
 
-	#if !defined _WIN32
+	//#if !defined _WIN32
 		Add("listen_port", mS.mPort, 4111);
+	/*
 	#else
 		Add("listen_port", mS.mPort, 411);
 	#endif
+	*/
 
 	Add("extra_listen_ports", extra_listen_ports,string(""));
 	// End hub info and basic settings
@@ -138,9 +140,9 @@ void cDCConf::AddVars()
 	// End nicklist configuration
 
 	// protocol commands length
-	Add("max_outbuf_size", max_outbuf_size, 2097152ul);
-	Add("max_outfill_size", max_outfill_size, 1310720ul);
-	Add("max_unblock_size", max_unblock_size, 1835008ul);
+	Add("max_outbuf_size", max_outbuf_size, 1048576ul);
+	Add("max_outfill_size", max_outfill_size, 786432ul);
+	Add("max_unblock_size", max_unblock_size, 524288ul);
 	Add("max_message_size", mS.mMaxLineLength, 10240ul);
 	Add("max_len_supports", max_len_supports, 512);
 	Add("max_len_version", max_len_version, 64);

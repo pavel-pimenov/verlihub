@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -19,15 +19,20 @@
 */
 
 #include "stdafx.h"
+
+/*
 #ifdef _WIN32
 #include <windows.h>
 #include <tchar.h>
 #define BUFSIZE MAX_PATH
 #include <local.h>
 #endif
+*/
+
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+	#include <config.h>
 #endif
+
 #include "cserverdc.h"
 #include <iostream>
 #include <stdlib.h>
@@ -48,7 +53,7 @@ cObj mainLogger("main");
 #define MAIN_LOG_NOTICE if (mainLogger.Log(0)) mainLogger.LogStream()
 #define MAIN_LOG_ERROR if (mainLogger.ErrLog(0)) mainLogger.LogStream()
 
-#if ! defined _WIN32
+//#if ! defined _WIN32
 void mySigPipeHandler(int i)
 {
 	signal(SIGPIPE, mySigPipeHandler);
@@ -67,9 +72,9 @@ void mySigQuitHandler(int i)
 	cServerDC *serv = (cServerDC*)cServerDC::sCurrentServer;
 
 	if (serv)
-		serv->OnUnLoad(0);
+		serv->SyncStop();
 
-	exit(0);
+	//exit(0);
 }
 
 void mySigServHandler(int i)
@@ -77,9 +82,9 @@ void mySigServHandler(int i)
 	MAIN_LOG_ERROR << "Received a " << i << " signal, doing stacktrace and quiting" << endl;
 	cServerDC *serv = (cServerDC*)cServerDC::sCurrentServer;
 
-	if (serv) {
-		serv->OnUnLoad(9);
+	if (serv) { // note: this is a crash, i dont think we can actually perform a proper stop()
 		serv->DoStackTrace();
+		serv->OnUnLoad(9); // try to unload as much as possible
 	}
 
 	exit(128 + i); // proper exit code for this signal
@@ -91,10 +96,9 @@ void mySigHupHandler(int i)
 	cServerDC *serv = (cServerDC*)cServerDC::sCurrentServer;
 
 	if (serv)
-		serv->Reload();
+		serv->SyncReload();
 }
-
-#endif
+//#endif
 
 bool DirExists(const char *dirname)
 {
@@ -168,6 +172,7 @@ int main(int argc, char *argv[])
 		arg >> port;
 	}
 
+	/*
 	#ifdef _WIN32
 		TCHAR Buffer[BUFSIZE];
 
@@ -179,6 +184,7 @@ int main(int argc, char *argv[])
 
 		ConfigBase = Buffer;
 	#else
+	*/
 		const char *DirName = NULL;
 		char *HomeDir = getenv("HOME");
 		string tmp;
@@ -210,32 +216,32 @@ int main(int argc, char *argv[])
 
 		if (!ConfigBase.size())
 			ConfigBase = "/etc/verlihub";
-	#endif
+	//#endif
 
 	MAIN_LOG_NOTICE << "Configuration directory: " << ConfigBase << endl;
-	try
-	{
+
+	//try { // whole process is running inside try?
 		cServerDC server(ConfigBase, argv[0]); // create server
 		cObj::msLogLevel += verbosity;
 
-		#ifndef _WIN32
+		//#ifndef _WIN32
 			signal(SIGPIPE, mySigPipeHandler);
-			signal(SIGIO,   mySigIOHandler);
+			signal(SIGIO, mySigIOHandler);
 			signal(SIGQUIT, mySigQuitHandler);
 			signal(SIGSEGV, mySigServHandler);
-			signal(SIGHUP,  mySigHupHandler);
-		#endif
+			signal(SIGHUP, mySigHupHandler);
+		//#endif
 
 		server.StartListening(port);
 		result = server.run(); // run the main loop until it stops itself
 		syslog(LOG_INFO,"verlihub -1");
 		closelog();
 		return result;
-	}
-	catch (const char *exception)
-	{
+	/*
+	} catch (const char *exception) {
 		MAIN_LOG_ERROR << exception << endl;
 		closelog();
 		return 3;
 	}
+	*/
 }

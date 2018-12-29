@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2017 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -33,9 +33,11 @@ cZLib::cZLib():
 	outBufLen(ZLIB_BUFFER_SIZE),
 	outLastLen(0)
 {
-	outBuf = (char*)calloc(ZLIB_BUFFER_SIZE, 1);
 	inBuf = (char*)calloc(ZLIB_BUFFER_SIZE, 1);
-	memcpy(outBuf, "$ZOn|", ZON_LEN);
+	outBuf = (char*)calloc(ZLIB_BUFFER_SIZE, 1);
+
+	if (outBuf)
+		memcpy(outBuf, "$ZOn|", ZON_LEN);
 }
 
 cZLib::~cZLib()

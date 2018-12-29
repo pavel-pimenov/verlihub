@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -79,14 +79,15 @@ cpiPython::~cpiPython()
 	if (lib_handle) dlclose(lib_handle);
 	log1("PY: cpiPython::destructor   Plugin ready to be unloaded\n");
 	delete mQuery;
+	mQuery = NULL;
 	return;
 }
 
 void cpiPython::OnLoad(cServerDC *server)
 {
 	log4("PY: cpiPython::OnLoad\n");
-	cVHPlugin::OnLoad(server);
 	mQuery = new cQuery(server->mMySQL);
+	cVHPlugin::OnLoad(server);
 	mScriptDir = mServer->mConfigBaseDir + "/scripts/";
 	this->server = server;
 	botname = server->mC.hub_security;
@@ -123,7 +124,12 @@ void cpiPython::OnLoad(cServerDC *server)
 		return;
 	}
 
-	w_Tcallback *callbacklist = (w_Tcallback *)calloc(W_MAX_CALLBACKS, sizeof(void *));
+	w_Tcallback *callbacklist = (w_Tcallback*)calloc(W_MAX_CALLBACKS, sizeof(void*));
+
+	if (!callbacklist) {
+		log("failed to calloc callback list\n");
+		return;
+	}
 
 	callbacklist[W_SendToOpChat]       = &_SendToOpChat;
 	callbacklist[W_SendToActive]       = &_SendToActive;
@@ -275,10 +281,14 @@ bool cpiPython::AutoLoad()
 	for (size_t i = 0; i < filenames.size(); i++) {
 		filename = filenames[i];
 		pathname = mScriptDir + filename;
-		cPythonInterpreter *ip = new cPythonInterpreter(pathname);
+		cPythonInterpreter *ip = NULL;
 
-		if (!ip)
+		try {
+			ip = new cPythonInterpreter(pathname);
+		} catch(...) {
+			log1("Error creating cPythonInterpreter for script: %s\n", filename.c_str());
 			continue;
+		}
 
 		AddData(ip);
 
@@ -380,30 +390,30 @@ w_Targs *cpiPython::SQL(int id, w_Targs *args)  // (char *query)
 		mQuery->Clear();
 		return lib_pack("lllp", (long)0, (long)0, (long)0, (void *)NULL);
 	}  // error
-	int rows = mQuery->StoreResult();
+	long rows = mQuery->StoreResult();
 	if (limit < rows) rows = limit;
 	if (rows < 1) {
 		mQuery->Clear();
 		return lib_pack("lllp", (long)1, (long)0, (long)0, (void *)NULL);
 	}
-	int cols = mQuery->Cols();
+	long cols = mQuery->Cols();
 	char **res = (char **)calloc(cols * rows, sizeof(char *));
 	if (!res) {
 		log1("PY: SQL   malloc failed\n");
 		mQuery->Clear();
 		return lib_pack("lllp", (long)0, (long)0, (long)0, (void *)NULL);
 	}
-	for (int r = 0; r < rows; r++) {
+	for (long r = 0; r < rows; r++) {
 		mQuery->DataSeek(r);
 		MYSQL_ROW row;
 		row = mQuery->Row();
 		if (!row) {
-			log1("PY: SQL   failed to fetch row: %d\n", r);
+			log1("PY: SQL   failed to fetch row: %ld\n", r);
 			mQuery->Clear();
 			free(res);
 			return lib_pack("lllp", (long)0, (long)0, (long)0, (void *)NULL);
 		}
-		for (int i = 0; i < cols; i++)
+		for (long i = 0; i < cols; i++)
 			res[(r * cols) + i] = strdup((row[i]) ? row[i] : "NULL");
 	}
 	mQuery->Clear();
@@ -1373,11 +1383,23 @@ w_Targs *_GetUserHost(int id, w_Targs *args)
 w_Targs *_GetUserIP(int id, w_Targs *args)
 {
 	const char *nick;
-	if (!cpiPython::lib_unpack(args, "s", &nick)) return NULL;
-	if (!nick) return NULL;
+
+	if (!cpiPython::lib_unpack(args, "s", &nick))
+		return NULL;
+
+	if (!nick)
+		return NULL;
+
 	const char *ip = "";
-	cUser *u = cpiPython::me->server->mUserList.GetUserByNick(nick);
-	if (u && u->mxConn) ip = u->mxConn->AddrIP().c_str();
+	cUser *user = cpiPython::me->server->mUserList.GetUserByNick(nick);
+
+	if (user) {
+		if (user->mxConn)
+			ip = user->mxConn->AddrIP().c_str();
+		else // bots have local ip
+			ip = "127.0.0.1";
+	}
+
 	return cpiPython::lib_pack("s", strdup(ip));
 }
 
@@ -1414,10 +1436,11 @@ w_Targs *_GetUserCC(int id, w_Targs *args)
 		return NULL;
 
 	const char *cc = "";
+	string geo;
 	cUser *user = cpiPython::me->server->mUserList.GetUserByNick(nick);
 
 	if (user && user->mxConn) {
-		string geo = user->mxConn->GetGeoCC();
+		geo = user->mxConn->GetGeoCC();
 		cc = geo.c_str();
 	}
 
@@ -1513,7 +1536,7 @@ w_Targs *_GetGeoIP(int id, w_Targs *args)
 	else if (geo_cont == "AN")
 		cont = "Antarctica";
 
-	vector<string> *data = new vector<string>();
+	vector<string> *data = new vector<string>(); // note: lib_pack automatically destructs all arguments
 	data->push_back("host");
 	data->push_back(geo_host);
 	data->push_back("range_low");
@@ -1709,14 +1732,14 @@ w_Targs* _ScriptQuery(int id, w_Targs *args)
 		return NULL;
 	if (responses.size() == 0)
 		return cpiPython::lib_pack("lllp", (long)1, (long)0, (long)0, (void *)NULL);
-	int rows = responses.size();
-	int cols = (use_long_output ? 2 : 1);
+	long rows = responses.size();
+	long cols = (use_long_output ? 2 : 1);
 	const char **res = (const char **)calloc(cols * rows, sizeof(char *));
 	if (!res) {
 		log1("PY: ScriptQuery   malloc failed\n");
 		return NULL;
 	}
-	for (int r = 0; r < rows; r++) {
+	for (long r = 0; r < rows; r++) {
 		if (cols == 1) {
 			res[r] = strdup(responses[r].data.c_str());
 		} else {
@@ -1752,12 +1775,19 @@ long is_robot_nick_bad(const char *nick)
 	if (!nick || (nick[0] == '\0'))
 		return eBOT_WITHOUT_NICK;
 
-	string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN)), s_nick(nick);
-	if (s_nick.find_first_of(badchars) != s_nick.npos) return eBOT_BAD_CHARS;
+	const string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN)), s_nick(nick);
+
+	if (s_nick.find_first_of(badchars) != s_nick.npos)
+		return eBOT_BAD_CHARS;
+
 	cServerDC *server = cpiPython::me->server;
+
 	if ((s_nick == server->mC.hub_security) || (s_nick == server->mC.opchat_name))
 		return eBOT_RESERVED_NICK;
-	if (server->mRobotList.ContainsNick(s_nick)) return eBOT_EXISTS;
+
+	if (server->mRobotList.ContainsNick(s_nick))
+		return eBOT_EXISTS;
+
 	return eBOT_OK;
 }
 
@@ -1771,40 +1801,26 @@ w_Targs *_IsRobotNickBad(int id, w_Targs *args)
 
 w_Targs *_AddRobot(int id, w_Targs *args)
 {
-	const char *nick, *desc, *speed, *email, *share;
-	long uclass;
+	const char *nick, *desc, *conn, *mail, *shar;
+	long clas;
 
-	if (!cpiPython::lib_unpack(args, "slssss", &nick, &uclass, &desc, &speed, &email, &share))
+	if (!cpiPython::lib_unpack(args, "slssss", &nick, &clas, &desc, &conn, &mail, &shar))
 		return NULL;
 
-	if (!nick || !desc || !speed || !email || !share)
+	if (!nick || (nick[0] == '\0') || !desc || !conn || !mail || !shar)
 		return NULL;
 
 	if (is_robot_nick_bad(nick))
 		return NULL;
 
-	if (uclass < -1 || (uclass > 5 && uclass != 10))
-		uclass = 0;
+	if (clas < 0 || (clas > 5 && clas != 10))
+		clas = 0;
 
-	cPluginRobot *robot = cpiPython::me->NewRobot(nick, uclass);
+	string info;
+	cpiPython::me->server->mP.Create_MyINFO(info, nick, desc, conn, mail, shar, false); // dont reserve for pipe, we are not sending this
 
-	if (robot) {
-		cServerDC *server = cpiPython::me->server;
-		server->mP.Create_MyINFO(robot->mMyINFO, robot->mNick, desc, speed, email, share, false); // dont reserve for pipe, we are not sending this
-		string msg;
-		msg.reserve(robot->mMyINFO.size() + 1); // first use, reserve for pipe
-		msg = robot->mMyINFO;
-		server->mUserList.SendToAll(msg, server->mC.delayed_myinfo, true);
-
-		if (robot->mClass >= server->mC.oplist_class) {
-			server->mP.Create_OpList(msg, robot->mNick, true); // reserve for pipe
-			server->mUserList.SendToAll(msg, server->mC.delayed_myinfo, true);
-		}
-
-		server->mP.Create_BotList(msg, robot->mNick, true); // reserve for pipe
-		server->mUserList.SendToAllWithFeature(msg, eSF_BOTLIST, server->mC.delayed_myinfo, true);
+	if (cpiPython::me->NewRobot(nick, clas, info)) // note: this will show user to all
 		return w_ret1;
-	}
 
 	return NULL;
 }
@@ -1812,17 +1828,18 @@ w_Targs *_AddRobot(int id, w_Targs *args)
 w_Targs *_DelRobot(int id, w_Targs *args)
 {
 	const char *nick;
+
 	if (!cpiPython::lib_unpack(args, "s", &nick))
 		return NULL;
 
 	if (!nick || (nick[0] == '\0'))
 		return NULL;
 
-	cPluginRobot *robot = (cPluginRobot*)cpiPython::me->server->mUserList.GetUserByNick(nick);
+	cUserRobot *robot = (cUserRobot*)cpiPython::me->server->mRobotList.GetUserBaseByNick(nick);
 
-	if (robot) {
-		if (cpiPython::me->DelRobot(robot))
-			return w_ret1;
+	if (robot) { // delete bot, this will also send quit to all
+		cpiPython::me->DelRobot(robot);
+		return w_ret1;
 	}
 
 	return NULL;
@@ -1870,7 +1887,7 @@ w_Targs *_UserRestrictions(int id, w_Targs *args)
 	if (!u) return NULL;
 
 	long period;
-	long now = (long)nUtils::cTime().Sec();
+	long now = cpiPython::me->server->mTime.Sec();
 	long week = 3600 * 24 * 7;
 
 	if (chat.length()) {

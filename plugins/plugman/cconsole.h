@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2017 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -67,6 +67,7 @@ public:
 	virtual const char *CmdWord(int cmd);
 	virtual bool IsConnAllowed(cConnDC* conn,int cmd);
 	virtual void GetHelpForCommand(int cmd, ostream &os);
+	virtual void GetHelp(ostream &os);
 
 	enum {eLC_ON = eLC_FREE, eLC_OFF, eLC_RE};
 

@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -20,16 +20,20 @@
 
 #ifndef NDIRECTCONNECT_NPLUGINCVHPLUGIN_H
 #define NDIRECTCONNECT_NPLUGINCVHPLUGIN_H
+
 #include "cpluginbase.h"
 #include "cusercollection.h"
 #include <vector>
 
 using namespace std;
+
 namespace  nVerliHub {
 	//using nPlugin::cPluginBase;
+
 	namespace nProtocol {
 		class cMessageDC;
 	};
+
 	namespace nTables {
 		class cBan;
 		class cRegUserInfo;
@@ -42,6 +46,7 @@ namespace  nVerliHub {
 		class cServerDC;
 		class cConnDC;
 	};
+
 	//using nSocket::cConnDC;
 	class cDCTag;
 	class cUser;
@@ -60,7 +65,6 @@ public:
 };
 
 typedef vector<ScriptResponse> ScriptResponses;
-
 
 namespace nPlugin {
 
@@ -414,7 +418,7 @@ public:
 
 	virtual bool AddRobot(cUserRobot *);
 	virtual bool DelRobot(cUserRobot *);
-	virtual cPluginRobot * NewRobot(const string &Nick, int);
+	virtual cPluginRobot* NewRobot(const string &nick, const int clas, const string &info);
 
 	/// robot events
 	virtual bool RobotOnPM( cPluginRobot *, cMessageDC *, nSocket::cConnDC *){ return true;};
@@ -485,13 +489,15 @@ public:
 	virtual bool OnUnLoad(long code) { return true; }
 
 	/// per-user data of the plugin
+	/*
 	virtual cPluginUserData *GetPluginUserData( cUser * );
 	virtual cPluginUserData *SetPluginUserData( cUser *, cPluginUserData *NewData );
+	*/
 
 	/// Pointer for the verlihub server
 	nSocket::cServerDC *mServer;
 	cUserCollection mRobots;
-	nUtils::tHashArray<cPluginUserData*> *mUserDataTable;
+	//nUtils::tHashArray<cPluginUserData*> *mUserDataTable;
 };
 
 	}; // namespace nPlugins

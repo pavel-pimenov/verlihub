@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -420,31 +420,32 @@ const char *GetUserIP(const char *nick)
 {
 	cUser *usr = GetUser(nick);
 
-	if (!usr || !usr->mxConn) {
+	if (!usr)
 		return "";
-	} else {
+	else if (!usr->mxConn) // bots have local ip
+		return "127.0.0.1";
+	else
 		return usr->mxConn->AddrIP().c_str();
-	}
 }
 
 bool Ban(const char *nick, const string &op, const string &reason, unsigned howlong, unsigned bantype)
 {
-	cServerDC *server = GetCurrentVerlihub();
+	cServerDC *serv = GetCurrentVerlihub();
 
-	if (!server) {
-		cerr << "Server verlihub is unfortunately not running or not found." << endl;
+	if (!serv) {
+		cerr << "Verlihub not found" << endl;
 		return false;
 	}
 
-	cUser *usr = GetUser(nick);
+	cUser *user = GetUser(nick);
 
-	if (!usr || !usr->mxConn)
+	if (!user || !user->mxConn)
 		return false;
 
-	cBan ban(server);
-	server->mBanList->NewBan(ban, usr->mxConn, op, reason, howlong, bantype);
-	server->mBanList->AddBan(ban);
-	usr->mxConn->CloseNice(1000, eCR_KICKED);
+	cBan ban(serv);
+	serv->mBanList->NewBan(ban, user->mxConn, op, reason, howlong, bantype);
+	serv->mBanList->AddBan(ban);
+	user->mxConn->CloseNice(1000, eCR_KICKED);
 	return true;
 }
 
@@ -577,12 +578,19 @@ const char * GetVHCfgDir()
 	return server->mConfigBaseDir.c_str();
 }
 
+/*
 #define count_of(arg) (sizeof(arg) / sizeof(arg[0]))
 bool GetTempRights(const char *nick,  map<string,int> &rights)
 {
+	cServerDC *serv = GetCurrentVerlihub();
+
+	if (!serv) {
+		cerr << "Verlihub not found" << endl;
+		return 0;
+	}
+
 	cUser *user = GetUser(nick);
 	if(user == NULL) return false;
-	cTime time = cTime().Sec();
 
 	static const int ids[] = { eUR_CHAT, eUR_PM, eUR_SEARCH, eUR_CTM, eUR_KICK, eUR_REG, eUR_OPCHAT, eUR_DROP, eUR_TBAN, eUR_PBAN, eUR_NOSHARE };
 	for(unsigned int i = 0; i < count_of(ids); i++) {
@@ -622,10 +630,11 @@ bool GetTempRights(const char *nick,  map<string,int> &rights)
 				key = "noshare";
 			break;
 		}
-		if(!key.empty()) rights[key] = (user->Can(ids[i],time) ? 1 : 0);
+		if(!key.empty()) rights[key] = (user->Can(ids[i], serv->mTime.Sec()) ? 1 : 0);
 	}
 	return true;
 }
+*/
 
 bool AddRegUser(const char *nick, int clas, const char *pass, const char* op)
 {
@@ -864,7 +873,7 @@ int CheckBotNick(const string &nick)
 	if (nick.empty())
 		return 2;
 
-	string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN));
+	static const string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN));
 
 	if (nick.npos != nick.find_first_of(badchars))
 		return 3;

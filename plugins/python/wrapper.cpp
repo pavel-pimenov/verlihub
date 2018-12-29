@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -72,6 +72,10 @@ char *w_SubStr(const char *s, int _start, int _end)
 
 	len2 = end - start;
 	s2 = (char*)malloc(len2 + 1);
+
+	if (!s2)
+		return strdup("");
+
 	s2[len2] = 0;
 	s2 = strncpy(s2, &s[start], len2);
 	return s2;
@@ -866,6 +870,7 @@ static PyObject *__GetGeoIP(PyObject *self, PyObject *args)
 		}
 
 		delete data;
+		data = NULL;
 		return p;
 	}
 
@@ -1276,7 +1281,11 @@ static PyMethodDef w_vh_methods[] = {
 
 int w_Begin(w_Tcallback *cblist)
 {
-	w_Python = (w_TScript *)calloc(1, sizeof(w_TScript));
+	w_Python = (w_TScript*)calloc(1, sizeof(w_TScript));
+
+	if (!w_Python)
+		return 0;
+
 	w_Python->callbacks = (w_Tcallback *)calloc(W_MAX_CALLBACKS, sizeof(void *));
 	w_Python->name = strdup("core");
 	w_Python->path = strdup("core");
@@ -1339,7 +1348,14 @@ int w_Load(w_Targs *args)
 		log2("PY: cannot start a new python interpreter with ID %ld\n", id);
 		return -1;
 	}
-	w_TScript *script = (w_TScript *)calloc(1, sizeof(w_TScript));
+
+	w_TScript *script = (w_TScript*)calloc(1, sizeof(w_TScript));
+
+	if (!script) {
+		log2("PY: cannot calloc for script: %s\n", scriptname);
+		return -1;
+	}
+
 	w_Scripts[id] = script;
 	script->id = id;
 	script->callbacks = w_Python->callbacks;
@@ -1469,14 +1485,18 @@ int w_Load(w_Targs *args)
 		return w_Unload(id);
 	}
 
-	char *hooks;
-	hooks = (char *)calloc(W_MAX_HOOKS, sizeof(char));
+	char *hooks = (char*)calloc(W_MAX_HOOKS, sizeof(char));
+
+	if (!hooks)
+		return -1;
+
 	for (int i = 0; i < W_MAX_HOOKS; i++) {
 		pFunc = w_GetHook(i);
 		if (!pFunc) continue;
 		hooks[i] = 1;
 		Py_DECREF(pFunc);
 	}
+
 	script->hooks = hooks;
 
 	if (log_level > 2) {
@@ -1545,10 +1565,18 @@ int w_HasHook(int id, int hook)
 		log("PY: HasHook error: No script with id: %d\n", id);
 		return 0;
 	}
+
 	w_TScript *script = w_Scripts[id];
-	if (!script || hook < 0 || hook >= W_MAX_HOOKS) return 0;
-	if (hook == W_OnOperatorCommand) return 1;
-	if (script->hooks[hook]) return 1;
+
+	if ((hook < 0) || (hook >= W_MAX_HOOKS))
+		return 0;
+
+	if (hook == W_OnOperatorCommand)
+		return 1;
+
+	if (script->hooks[hook])
+		return 1;
+
 	return 0;
 }
 

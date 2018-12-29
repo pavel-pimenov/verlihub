@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -26,6 +26,7 @@
 #include "casyncsocketserver.h"
 #include "cserverdc.h"
 
+/*
 #if defined _WIN32
 	#include <Winsock2.h>
 	#define ECONNRESET WSAECONNRESET
@@ -34,6 +35,7 @@
 	#define socklen_t int
 	#define sockoptval_t char
 #endif
+*/
 
 #if HAVE_ERRNO_H
 	#include <errno.h>
@@ -42,12 +44,12 @@
 #include "casyncconn.h"
 #include "cprotocol.h"
 
-#if !defined _WIN32
+//#if !defined _WIN32
 	#include <arpa/inet.h>
 	#include <netinet/in.h> /* for sockaddr_in */
 	#include <sys/socket.h> /* for AF_INET */
 	#include <netdb.h> /* for gethostbyaddr */
-#endif
+//#endif
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -55,13 +57,13 @@
 #include "ctime.h"
 #include "stringutils.h"
 
-#if ! defined _WIN32
+//#if ! defined _WIN32
 	#define sockoptval_t int
 	inline int closesocket(int s)
 	{
 		return ::close(s);
 	}
-#endif
+//#endif
 
 #ifndef MSG_NOSIGNAL
 	#define MSG_NOSIGNAL 0
@@ -90,25 +92,23 @@ cAsyncConn::cAsyncConn(int desc, cAsyncSocketServer *s, tConnType ct): // connec
 	mxAcceptingFactory(NULL),
 	mxProtocol(NULL),
 	mpMsgParser(NULL),
+	mIP(0),
 	mAddrPort(0),
 	mServPort(0),
-	mType(ct)
+	mMaxBuffer(MAX_SEND_SIZE),
+	mType(ct),
+	mBufEnd(0),
+	mBufReadPos(0)
 {
-	mMaxBuffer = MAX_SEND_SIZE;
-
 	if (mxServer) {
 		nVerliHub::cServerDC *serv = (nVerliHub::cServerDC*)mxServer;
-
-		if (serv)
-			mMaxBuffer = serv->mC.max_outbuf_size;
+		mMaxBuffer = serv->mC.max_outbuf_size; // todo: this is useless, we need to update mMaxBuffer for all users every time max_outbuf_size is changed
 	}
 
 	struct sockaddr saddr;
 	struct sockaddr_in *addr_in;
 	socklen_t addr_size = sizeof(saddr);
-	mIP = 0;
 	ClearLine();
-	mBufEnd = mBufReadPos = 0;
 
 	if (mSockDesc) {
 		if (0 > getpeername(mSockDesc, &saddr, &addr_size)) {
@@ -137,25 +137,32 @@ cAsyncConn::cAsyncConn(int desc, cAsyncSocketServer *s, tConnType ct): // connec
 	}
 
 	memset(&mCloseAfter, 0, sizeof(mCloseAfter));
+	memset(&mAddrIN, 0, sizeof(struct sockaddr_in));
 }
 
 // connect to given host or ip on port
-cAsyncConn::cAsyncConn(const string &host, int port, bool udp):
+cAsyncConn::cAsyncConn(const string &host, int port/*, bool udp*/):
 	cObj("cAsyncConn"),
 	//mIterator(0),
+	mZLibFlag(false),
 	ok(false),
 	mWritable(true),
-#if !defined _WIN32
+//#if !defined _WIN32
 	mSockDesc(-1),
+/*
 #else
 	mSockDesc(0),
 #endif
+*/
 	mxServer(NULL),
 	mxMyFactory(NULL),
 	mxAcceptingFactory(NULL),
 	mxProtocol(NULL),
 	mpMsgParser(NULL),
+	mIP(0),
 	mAddrPort(port),
+	mServPort(0),
+	mMaxBuffer(0),
 	mType(eCT_SERVER),
 	mBufEnd(0),
 	mBufReadPos(0),
@@ -163,12 +170,14 @@ cAsyncConn::cAsyncConn(const string &host, int port, bool udp):
 {
 	ClearLine();
 
+	/*
 	if (udp) {
 		mType = eCT_SERVERUDP;
 		SetupUDP(host, port);
 	} else {
+	*/
 		Connect(host, port);
-	}
+	//}
 }
 
 cAsyncConn::~cAsyncConn()
@@ -278,7 +287,11 @@ void cAsyncConn::CloseNice(int msec)
 		return;
 	}
 
-	mCloseAfter.Get();
+	if (mxServer)
+		mCloseAfter = mxServer->mTime;
+	else
+		mCloseAfter.Get();
+
 	mCloseAfter += msec;
 }
 
@@ -294,24 +307,25 @@ void cAsyncConn::CloseNow()
 
 int cAsyncConn::ReadAll()
 {
-	int buf_len = 0 , i=0, addr_len = sizeof(struct sockaddr);
+	int buf_len = 0 , i=0;//, addr_len = sizeof(struct sockaddr);
 	mBufReadPos = 0;
 	mBufEnd = 0;
-	bool udp = (this->GetType() == eCT_CLIENTUDP);
+	//bool udp = (this->GetType() == eCT_CLIENTUDP);
 
 	if(!ok || !mWritable)
 		return -1;
 
-	if(!udp) {
+	//if(!udp) {
 		while(
 			((buf_len = recv(mSockDesc, msBuffer, MAX_MESS_SIZE, 0)) == -1) &&
 			((errno == EAGAIN) || (errno == EINTR))
 			&& (i++ <= 100)
 		)	{
-#if ! defined _WIN32
+//#if ! defined _WIN32
 	    ::usleep(5);
-#endif
+//#endif
 		}
+	/*
 	} else {
 		while(
 			((buf_len = recvfrom(mSockDesc, msBuffer, MAX_MESS_SIZE, 0, (struct sockaddr *)&mAddrIN, (socklen_t *)&addr_len)) == -1) &&
@@ -322,9 +336,10 @@ int cAsyncConn::ReadAll()
 #endif
 		}
 	}
+	*/
 
 	if(buf_len <= 0) {
-		if(!udp) {
+		//if(!udp) {
 			if(buf_len == 0) {
 				/* Connection closed - hung up*/
 				if(Log(2))
@@ -343,32 +358,38 @@ int cAsyncConn::ReadAll()
 			}
 			CloseNow();
 			return -1;
-		}
+		//}
 	} else {
 		// Received data
 		mBufEnd = buf_len;
 		mBufReadPos = 0;
 		// End string
 		msBuffer[mBufEnd] = '\0';
-		mTimeLastIOAction.Get();
+
+		if (mxServer)
+			mTimeLastIOAction = mxServer->mTime;
+		else
+			mTimeLastIOAction.Get();
 	}
+
 	return buf_len;
 }
 
 int cAsyncConn::SendAll(const char *buf, size_t &len)
 {
-	size_t total = 0;        /* how many bytes we've sent */
-	size_t bytesleft = len; /* how many we have left to send */
+	size_t total = 0; // how many bytes weve sent
+	size_t bytesleft = len; // how many we have left to send
 	int n = 0;
-	int repetitions=0;
-	bool udp = (this->GetType() == eCT_SERVERUDP);
+	int repetitions = 0;
+	//bool udp = (this->GetType() == eCT_SERVERUDP);
 
 #ifndef QUICK_SEND
-	while(total < len) {
-		try {
-			if(!udp) {
-#if ! defined _WIN32
-				n = send(mSockDesc, buf + total, bytesleft, MSG_NOSIGNAL|MSG_DONTWAIT);
+	while (total < len) {
+		//try {
+			//if(!udp) {
+//#if ! defined _WIN32
+				n = send(mSockDesc, buf + total, bytesleft, MSG_NOSIGNAL | MSG_DONTWAIT);
+/*
 #else
 				int RetryCount = 0;
 				do {
@@ -382,9 +403,13 @@ int cAsyncConn::SendAll(const char *buf, size_t &len)
 				}
 				while (WSAGetLastError() == WSAEWOULDBLOCK);
 #endif
+*/
+			/*
 			} else {
 				n = sendto(mSockDesc, buf + total, bytesleft, 0, (struct sockaddr *)&mAddrIN, sizeof(struct sockaddr));
 			}
+			*/
+			/*
     		} catch(...) {
 			if(ErrLog(2))
 				LogStream() << "exception in SendAll(buf," << len
@@ -394,24 +419,30 @@ int cAsyncConn::SendAll(const char *buf, size_t &len)
 					<< " n=" << n << endl;
 			return -1;
 		}
+		*/
 		repetitions++;
-		if(n == -1)
+
+		if (n == -1)
 			break;
+
 		total += n;
 		bytesleft -= n;
 	}
 #else
-	if(!udp) {
+	//if(!udp) {
 		n = send(mSockDesc, buf + total, bytesleft, 0);
+	/*
 	}
 	else
 		n = sendto(mSockDesc, buf + total, bytesleft, 0, (struct sockaddr *)&mAddrIN, sizeof(struct sockaddr));
+	*/
 	total = n;
 #endif
 	len = total; /* return number actually sent here */
-	return n == -1?-1:0; /* return -1 on failure, 0 on success */
+	return n == -1 ? -1 : 0; /* return -1 on failure, 0 on success */
 }
 
+/*
 int cAsyncConn::SetupUDP(const string &host, int port)
 {
 	mSockDesc = CreateSock(true);
@@ -450,6 +481,7 @@ int cAsyncConn::SendUDPMsg(const string &host, int port, const string &data)
 		conn.Close();
 	return result;
 }
+*/
 
 int cAsyncConn::Connect(const string &host, int port)
 {
@@ -489,29 +521,31 @@ int cAsyncConn::Connect(const string &host, int port)
 
 int cAsyncConn::SetSockOpt(int optname, const void *optval, int optlen)
 {
-#ifndef _WIN32
+//#ifndef _WIN32
 	return setsockopt(this->mSockDesc, SOL_SOCKET, optname, optval , optlen);
+/*
 #else
 	return 0;
 #endif
+*/
 }
 
 int cAsyncConn::GetSockOpt(int optname, void *optval, int &optlen)
 {
 	int result = 0;
-#ifndef _WIN32
+//#ifndef _WIN32
 	socklen_t _optlen;
 	result = getsockopt(this->mSockDesc, SOL_SOCKET, optname, optval , &_optlen);
-#endif
+//#endif
 	return result;
 }
 
-tSocket cAsyncConn::CreateSock(bool udp)
+tSocket cAsyncConn::CreateSock(/*bool udp*/)
 {
 	tSocket sock;
 	sockoptval_t yes = 1;
 
-	if(!udp) {
+	//if(!udp) {
 		/* Create tcp socket */
 		if((sock = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
 			return INVALID_SOCKET;
@@ -521,11 +555,13 @@ tSocket cAsyncConn::CreateSock(bool udp)
 			closesocket(sock);
 			return INVALID_SOCKET;
 		}
+	/*
 	} else {
-		/* Create udp socket */
+		// Create udp socket
 		if((sock = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
 			return INVALID_SOCKET;
 	}
+	*/
 
 	sSocketCounter ++;
 	if(Log(3))
@@ -536,25 +572,29 @@ tSocket cAsyncConn::CreateSock(bool udp)
 
 int cAsyncConn::BindSocket(int sock, int port, const char *ia)
 {
-	if(sock < 0)
+	if (sock < 0)
 		return -1;
-	memset(&mAddrIN, 0, sizeof(struct sockaddr_in));
+
 	mAddrIN.sin_family = AF_INET;
 	mAddrIN.sin_addr.s_addr = INADDR_ANY; // default listen address
-	if(ia)
-#if !defined _WIN32
+
+	if (ia) {
+//#if !defined _WIN32
 		inet_aton(ia, &mAddrIN.sin_addr); // override it
+/*
 #else
 		mAddrIN.sin_addr.s_addr = inet_addr(ia);
 #endif
+*/
+	}
+
 	mAddrIN.sin_port = htons(port);
 	memset(&(mAddrIN.sin_zero), '\0', 8);
 
-
-	/* Bind socket to port */
-	if(bind(sock, (struct sockaddr *)&mAddrIN, sizeof(mAddrIN)) == -1) {
+	// bind socket to port
+	if (bind(sock, (struct sockaddr*)&mAddrIN, sizeof(mAddrIN)) == -1)
 		return -1;
-	}
+
 	return sock;
 }
 
@@ -573,30 +613,32 @@ tSocket cAsyncConn::NonBlockSock(int sock)
 {
 	if(sock < 0)
 		return -1;
-#if !defined _WIN32
+//#if !defined _WIN32
 	int flags;
 	if((flags = fcntl(sock, F_GETFL, 0)) < 0)
 		return INVALID_SOCKET;
 	if( fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0 )
 		return INVALID_SOCKET;
+/*
 #else
 	unsigned long one = 1;
 	if(SOCKET_ERROR == ioctlsocket(sock, FIONBIO, &one))
 		return INVALID_SOCKET;
 #endif
+*/
 	return sock;
 }
 
-int cAsyncConn::ListenOnPort(int port, const char *address, bool udp)
+int cAsyncConn::ListenOnPort(int port, const char *address/*, bool udp*/)
 {
 	if(mSockDesc)
 		return -1;
-	mSockDesc = CreateSock(udp);
+	mSockDesc = CreateSock(/*udp*/);
 	mSockDesc = BindSocket(mSockDesc,port,address);
-	if(!udp) {
+	//if(!udp) {
 	    mSockDesc = ListenSock(mSockDesc);
 	    mSockDesc = NonBlockSock(mSockDesc);
-	}
+	//}
 	ok = mSockDesc > 0;
 	return mSockDesc;
 }
@@ -606,48 +648,58 @@ tSocket cAsyncConn::AcceptSock()
 	socklen_t namelen;
 	sockoptval_t yes = 1;
 	int i=0;
-	#if ! defined _WIN32
+	//#if ! defined _WIN32
 	struct sockaddr_in client;
+	/*
 	#else
 	struct sockaddr client;
 	#endif
+	*/
 
 
 	/* Get a socket for the connected user.  */
 	namelen = sizeof(client);
 	memset(&client, 0, namelen);
 
-	#if ! defined _WIN32
+	//#if ! defined _WIN32
 		tSocket socknum = ::accept(mSockDesc, (struct sockaddr *)&client, &namelen);
+	/*
 	#else
 		tSocket socknum = accept(mSockDesc, (struct sockaddr *)&client, &namelen);
 	#endif
+	*/
 
 	while(( socknum == INVALID_SOCKET) && ((errno == EAGAIN) || (errno == EINTR)) && (i++ < 10)) {
-		#if ! defined _WIN32
+		//#if ! defined _WIN32
 		socknum = ::accept(mSockDesc, (struct sockaddr *)&client, (socklen_t*)&namelen);
+		/*
 		#else
    		socknum = accept(mSockDesc, (struct sockaddr *)&client, &namelen);
 		#endif
+		*/
 
-		#if ! defined _WIN32
+		//#if ! defined _WIN32
 		::usleep(50);
+		/*
 		#else
 		::Sleep(1);
 		#endif
+		*/
 	}
 
 	if(socknum == INVALID_SOCKET) {
+		/*
 		#ifdef _WIN32
 		vhErr(1) << WSAGetLastError() << "  " << sizeof(fd_set) << endl;
 		#endif
+		*/
 		return INVALID_SOCKET;
 	}
 	if(Log(3))
 		LogStream() << "Accepted Socket " << socknum << endl;
 	sSocketCounter++;
 
-#ifndef _WIN32
+//#ifndef _WIN32
 	if(setsockopt(socknum, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(int)) == SOCKET_ERROR) {
 		TEMP_FAILURE_RETRY(closesocket(socknum));
 		if(errno != EINTR) {
@@ -658,7 +710,7 @@ tSocket cAsyncConn::AcceptSock()
 			LogStream() << "Socket not closed" << endl;
 		return INVALID_SOCKET;
 	}
-#endif
+//#endif
 	if((socknum = NonBlockSock(socknum)) == INVALID_SOCKET)
 		return INVALID_SOCKET;
 
@@ -679,11 +731,15 @@ cAsyncConn * cAsyncConn::Accept()
 	tSocket sd;
 	cConnFactory *AcceptingFactory = NULL;
 	cAsyncConn *new_conn = NULL;
-
 	sd = AcceptSock();
-	if(sd == INVALID_SOCKET)
+
+	if (sd == INVALID_SOCKET)
 		return NULL;
-	mTimeLastIOAction.Get();
+
+	if (mxServer)
+		mTimeLastIOAction = mxServer->mTime;
+	else
+		mTimeLastIOAction.Get();
 
 	AcceptingFactory = this->GetAcceptingFactory();
 	if (AcceptingFactory != NULL)
@@ -694,10 +750,12 @@ cAsyncConn * cAsyncConn::Accept()
 	return new_conn;
 }
 
+/*
 const tConnType& cAsyncConn::getType()
 {
 	return mType;
 }
+*/
 
 tConnType cAsyncConn::GetType()
 {
@@ -721,10 +779,12 @@ int cAsyncConn::OnTimer(cTime &now)
 	return 0;
 }
 
+/*
 void cAsyncConn::OnFlushDone()
 {}
+*/
 
-int cAsyncConn::Write(const string &data, bool flush)
+int cAsyncConn::Write(const string &data, bool flush) // note: data can actually be empty when we perform a timed flush
 {
 	size_t flush_size = GetFlushSize(), buf_size = GetBufferSize(), data_size = data.size();
 	size_t calc_size = flush_size + buf_size + data_size;
@@ -736,13 +796,6 @@ int cAsyncConn::Write(const string &data, bool flush)
 		CloseNow();
 		return -1;
 	}
-
-	nVerliHub::cServerDC *serv = NULL;
-
-	if (mxServer)
-		serv = (nVerliHub::cServerDC*)mxServer;
-	else if (Log(5))
-		LogStream() << "Server not available for write operations" << endl;
 
 	if (data_size) { // we have something new to append
 		mBufFlush.reserve(mBufFlush.size() + data_size); // always reserve because we are adding new data
@@ -756,9 +809,16 @@ int cAsyncConn::Write(const string &data, bool flush)
 	if (!buf_size || !flush) // nothing to send or send it later
 		return 0;
 
+	nVerliHub::cServerDC *serv = NULL;
+
+	if (mxServer)
+		serv = (nVerliHub::cServerDC*)mxServer;
+	else if (Log(5))
+		LogStream() << "Server not available for write operations" << endl;
+
 	const char *send_buf = mBufFlush.data(); // pointer to flush buffer
 
-	if (flush_size && send_buf) { // check if there is something to flush, else send old remaining data
+	if (flush_size) { // check if there is something to flush, else send old remaining data
 		if (mZLibFlag && serv && !serv->mC.disable_zlib && (flush_size >= serv->mC.zlib_min_len)) { // compress data only when flushing or we will destroy everything, only if minimum length is reached
 			if (send_buf[flush_size - 1] == '|') {
 				calc_size = 0; // we dont use it anymore
@@ -807,8 +867,10 @@ int cAsyncConn::Write(const string &data, bool flush)
 
 	send_buf = mBufSend.data(); // pointer to send buffer
 
+	/*
 	if (!send_buf)
 		return 0;
+	*/
 
 	calc_size = buf_size; // we dont use it anymore, make copy of send buffer size because send method will change it
 
@@ -825,7 +887,11 @@ int cAsyncConn::Write(const string &data, bool flush)
 		}
 
 		if (calc_size > 0) { // some data was sent, update the buffer
-			mTimeLastIOAction.Get();
+			if (serv)
+				mTimeLastIOAction = serv->mTime;
+			else
+				mTimeLastIOAction.Get();
+
 			StrCutLeft(mBufSend, calc_size); // this is supposed to actually reduce the size of buffer, it does a copy so it is slower but memory usage is important
 			buf_size -= calc_size;
 		} else if (bool(mCloseAfter)) { // we must close nice the connection
@@ -869,8 +935,12 @@ int cAsyncConn::Write(const string &data, bool flush)
 				LogStream() << "Blocking output" << endl;
 		}
 
-		mTimeLastIOAction.Get();
-		OnFlushDone(); // report that flush is done
+		if (serv)
+			mTimeLastIOAction = serv->mTime;
+		else
+			mTimeLastIOAction.Get();
+
+		//OnFlushDone(); // report that flush is done
 	}
 
 	return calc_size;
@@ -890,10 +960,12 @@ cMessageParser *cAsyncConn::CreateParser()
 
 void cAsyncConn::DeleteParser(cMessageParser *OldParser)
 {
-	if (this->mxProtocol != NULL)
+	if (this->mxProtocol != NULL) {
 		this->mxProtocol->DeleteParser(OldParser);
-	else
+	} else {
 		delete OldParser;
+		OldParser = NULL;
+	}
 }
 
 string * cAsyncConn::FactoryString()
@@ -932,12 +1004,14 @@ bool cAsyncConn::DNSResolveReverse(const string &ip, string &host)
 {
 	struct hostent *hp;
 	struct in_addr addr;
-#ifndef _WIN32
+//#ifndef _WIN32
 	if(!inet_aton(ip.c_str(), &addr))
 		return false;
+/*
 #else
 	addr.s_addr = inet_addr(ip.c_str());
 #endif
+*/
 	if((hp = gethostbyaddr((char *)&addr,sizeof(addr),AF_INET)))
 		host=hp->h_name;
 	return hp != NULL;

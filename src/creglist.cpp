@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -71,7 +71,7 @@ cRegList::cRegList(cMySQL &mysql, cServerDC *server):
 	AddCol("error_cnt", "int(11)", "0", true, mModel.mErrorCount);
 	AddCol("error_ip", "varchar(16)", "", true, mModel.mErrorIP);
 	AddCol("enabled", "tinyint(1)", "1", true, mModel.mEnabled);
-	AddCol("email", "varchar(60)", "", true, mModel.mEmail);
+	//AddCol("email", "varchar(60)", "", true, mModel.mEmail);
 	AddCol("note_op", "text", "", true, mModel.mNoteOp);
 	AddCol("note_usr", "text", "", true, mModel.mNoteUsr);
 	AddCol("auth_ip", "varchar(15)", "", true, mModel.mAuthIP);
@@ -139,7 +139,7 @@ bool cRegList::AddRegUser(const string &nick, cConnDC *op, int clas, const char 
 	else
 		ui.mClass = eUC_REGUSER;
 
-	ui.mRegDate = cTime().Sec();
+	ui.mRegDate = mS->mTime.Sec();
 	ui.mRegOp = (op && op->mpUser) ? op->mpUser->mNick : mS->mC.hub_security;
 	ui.SetPass((pass ? string(pass) : string()), cRegUserInfo::tCryptMethods(mS->mC.default_password_encryption));
 
@@ -161,7 +161,7 @@ bool cRegList::ChangePwd(const string &nick, const string &pwd, cConnDC *conn)
 	mModel.SetPass(pwd, (cRegUserInfo::tCryptMethods)mS->mC.default_password_encryption);
 
 	if (conn) { // update last login date
-		mModel.mLoginLast = cTime().Sec();
+		mModel.mLoginLast = mS->mTime.Sec();
 		mModel.mLoginIP = conn->AddrIP();
 		mModel.mLoginCount++;
 	}
@@ -182,7 +182,7 @@ bool cRegList::Login(cConnDC *conn, const string &nick)
 {
 	cRegUserInfo ui;
 	if(!FindRegInfo(ui, nick)) return false;
-	ui.mLoginLast = cTime().Sec();
+	ui.mLoginLast = mS->mTime.Sec();
 	ui.mLoginIP   = conn->AddrIP();
 	ui.mLoginCount++;
 	return UpdatePK();
@@ -192,7 +192,7 @@ bool cRegList::Login(cConnDC *conn, const string &nick)
 bool cRegList::Logout(const string &nick)
 {
 	if(!FindRegInfo(mModel, nick)) return false;
-	mModel.mLogoutLast = cTime().Sec()-1; // this is a patch for users that connect twice
+	mModel.mLogoutLast = mS->mTime.Sec() - 1; // this is a patch for users that connect twice
 	return UpdatePKVar("logout_last");
 }
 
@@ -200,7 +200,7 @@ bool cRegList::Logout(const string &nick)
 bool cRegList::LoginError(cConnDC *conn, const string &nick)
 {
 	if(!FindRegInfo(mModel, nick)) return false;
-	mModel.mErrorLast = cTime().Sec();
+	mModel.mErrorLast = mS->mTime.Sec();
 	mModel.mErrorIP = conn->AddrIP();
 	mModel.mErrorCount++;
 	return UpdatePK();

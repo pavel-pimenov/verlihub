@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -25,9 +25,9 @@
 #include <syslog.h>
 #include <cstring>
 
-#if (!defined _WIN32) && (!defined __int64)
+//#if (!defined _WIN32) && (!defined __int64)
 	#define __int64 long long
-#endif
+//#endif
 
 using namespace std;
 

@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -146,7 +146,7 @@ bool cHTTPConn::Request(const string &meth, const string &req, const string &hea
 
 int cHTTPConn::Write(const string &data)
 {
-	size_t dasi = data.size();
+	const size_t dasi = data.size();
 	size_t busi = GetSize() + dasi;
 
 	if (busi > MAX_SEND) {
@@ -155,15 +155,17 @@ int cHTTPConn::Write(const string &data)
 	}
 
 	if (dasi)
-		mSend.append(data.data(), dasi);
+		mSend.append(data);
 
 	if (!busi)
 		return 0;
 
 	const char *buf = mSend.data();
 
+	/*
 	if (!buf)
 		return 0;
+	*/
 
 	if (Send(buf, busi) == -1) {
 		if ((errno != EAGAIN) && (errno != EINTR)) {
@@ -227,11 +229,13 @@ int cHTTPConn::Send(const char *buf, size_t &len)
 
 #ifndef QUICK_SEND
 	while (tot < len) {
-		try {
+		//try {
 			res = send(mSock, buf + tot, left, MSG_NOSIGNAL | MSG_DONTWAIT);
+		/*
    		} catch (...) {
 			return -1;
 		}
+		*/
 
 		if (res == -1)
 			break;

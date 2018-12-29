@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -155,6 +155,7 @@ bool cConsole::cfDelPythonScript::operator()()
 		if (li && ((number && (num == li->id)) || (!number && (StrCompare(li->mScriptName, 0, li->mScriptName.size(), scriptfile) == 0)))) {
 			(*mOS) << autosprintf(_("Script #%d stopped: %s"), li->id, li->mScriptName.c_str());
 			delete li;
+			li = NULL;
 			GetPI()->mPython.erase(it);
 			return true;
 		}
@@ -223,10 +224,12 @@ bool cConsole::cfAddPythonScript::operator()()
 		}
 	}
 
-	cPythonInterpreter *ip = new cPythonInterpreter(scriptfile);
+	cPythonInterpreter *ip = NULL;
 
-	if (!ip) {
-		(*mOS) << _("Failed to allocate new Python interpreter.");
+	try {
+		ip = new cPythonInterpreter(scriptfile);
+	} catch(...) {
+		(*mOS) << autosprintf(_("Failed to allocate new Python interpreter for script: %s"), scriptfile.c_str());
 		return false;
 	}
 
@@ -274,6 +277,7 @@ bool cConsole::cfReloadPythonScript::operator()()
 			scriptfile = li->mScriptName;
 			(*mOS) << autosprintf(_("Script #%d stopped: %s"), li->id, li->mScriptName.c_str());
 			delete li;
+			li = NULL;
 			GetPI()->mPython.erase(it);
 			break;
 		}
@@ -286,10 +290,12 @@ bool cConsole::cfReloadPythonScript::operator()()
 			(*mOS) << autosprintf(_("Script not stopped because it's not loaded: %s"), scriptfile.c_str());
 	}
 
-	cPythonInterpreter *ip = new cPythonInterpreter(scriptfile);
+	cPythonInterpreter *ip = NULL;
 
-	if (!ip) {
-		(*mOS) << ' ' << _("Failed to allocate new Python interpreter.");
+	try {
+		ip = new cPythonInterpreter(scriptfile);
+	} catch(...) {
+		(*mOS) << autosprintf(_("Failed to allocate new Python interpreter for script: %s"), scriptfile.c_str());
 		return false;
 	}
 

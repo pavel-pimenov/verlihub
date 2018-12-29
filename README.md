@@ -8,7 +8,7 @@ Verlihub 1.1.0.x
 
 Verlihub is a NeoModus Direct Connect server for Unix and Linux based operating systems that provides useful high level functions such as:
 
-  * Very low RAM and CPU usage
+  * ~~Very low RAM and CPU usage~~ (it has become very rich during the years, so it does require good hardware for large hubs, this statement is correct only for small hubs below 2000 users)
   * It can hold more than 20.000 users
   * Utility scripts for simple installation and hub management
   * Export and import of hub setting via MySQL
@@ -36,3 +36,4 @@ Donation
 
   * PayPal: [webmaster@feardc.net](https://paypal.me/feardc/)
   * BitCoin: 1DDckwdpRmwzJVpZ9QRkMTugQFEbft43Rw
+  * Ethereum: 0xA24034373D87a28dCF1eEC394b1cEB0dAd8649D0

@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -34,6 +34,7 @@ namespace nVerliHub {
 cBanList::cBanList(cServerDC *s):
 	cConfMySQL(s->mMySQL),
 	mModel(s),
+	mUnBanList(NULL),
 	mS(s)
 {
 	mMySQLTable.mName = "banlist";
@@ -80,16 +81,14 @@ cUnBanList::~cUnBanList(){}
 
 void cBanList::Cleanup()
 {
-	time_t Now = cTime().Sec();
-	mQuery.OStream() << "DELETE FROM " << mMySQLTable.mName << " WHERE date_limit IS NOT NULL AND date_limit < " << (Now - (3600 * 24 * 7));
+	mQuery.OStream() << "delete from " << mMySQLTable.mName << " where date_limit is not null and date_limit < " << (mS->mTime.Sec() - (3600 * 24 * 7));
 	mQuery.Query();
 	mQuery.Clear();
 }
 
 void cUnBanList::Cleanup()
 {
-	time_t Now = cTime().Sec();
-	mQuery.OStream() << "DELETE FROM " << mMySQLTable.mName << " WHERE date_unban < " << (Now - (3600 * 24 * 30));
+	mQuery.OStream() << "delete from " << mMySQLTable.mName << " where date_unban < " << (cTime().Sec() - (3600 * 24 * 30)); // todo: mS->mTime.Sec()
 	mQuery.Query();
 	mQuery.Clear();
 }
@@ -104,18 +103,20 @@ int cBanList::UpdateBan(cBan &ban)
 	return 0;
 }
 
+/*
 bool cBanList::LoadBanByKey(cBan &ban)
 {
 	SetBaseTo(&ban);
 	return LoadPK();
 }
+*/
 
 void cBanList::NewBan(cBan &ban, cConnDC *connection, const string &nickOp, const string &reason, unsigned length, unsigned mask)
 {
 	if (connection) {
 		ban.mIP = connection->AddrIP();
 		ban.mHost = connection->AddrHost();
-		ban.mDateStart = cTime().Sec();
+		ban.mDateStart = mS->mTime.Sec();
 		ban.mDateEnd = ban.mDateStart + length;
 		ban.mLastHit = 0;
 		ban.mReason = reason;
@@ -277,8 +278,7 @@ unsigned int cBanList::TestBan(cBan &ban, cConnDC *conn, const string &nick, uns
 	if (!found)
 		return 0;
 
-	time_t now = cTime().Sec();
-	query << ") and ((`date_limit` >= " << now << ") or (`date_limit` is null) or (`date_limit` = 0)) order by `date_limit` desc limit 1";
+	query << ") and ((`date_limit` >= " << mS->mTime.Sec() << ") or (`date_limit` is null) or (`date_limit` = 0)) order by `date_limit` desc limit 1";
 
 	if (StartQuery(query.str()) == -1)
 		return 0;
@@ -288,7 +288,7 @@ unsigned int cBanList::TestBan(cBan &ban, cConnDC *conn, const string &nick, uns
 	EndQuery();
 
 	if (found) {
-		ban.mLastHit = now;
+		ban.mLastHit = mS->mTime.Sec();
 		UpdatePK();
 	}
 
@@ -326,7 +326,7 @@ int cBanList::DeleteAllBansBy(const string &ip, const string &nick, int mask)
 void cBanList::NewBan(cBan &ban, const cKick &kick, long period, int mask)
 {
 	ban.mIP = kick.mIP;
-	ban.mDateStart = cTime().Sec();
+	ban.mDateStart = mS->mTime.Sec();
 
 	if (period)
 		ban.mDateEnd = ban.mDateStart + period;
@@ -345,7 +345,7 @@ void cBanList::NewBan(cBan &ban, const cKick &kick, long period, int mask)
 int cBanList::Unban(ostream &os, const string &value, const string &reason, const string &nickOp, int mask, bool deleteEntry)
 {
 	SelectFields(mQuery.OStream());
-	if(!AddTestCondition(mQuery.OStream() << " WHERE ", value, mask)) {
+	if(!AddTestCondition(mQuery.OStream() << " where ", value, mask)) {
 		mQuery.Clear();
 		return 0;
 	}
@@ -360,16 +360,17 @@ int cBanList::Unban(ostream &os, const string &value, const string &reason, cons
 			unban = new cUnBan(mModel, mS);
 			unban->mUnReason = reason;
 			unban->mUnNickOp = nickOp;
-         		unban->mDateUnban = cTime().Sec();
+         	unban->mDateUnban = mS->mTime.Sec();
 			mUnBanList->SetBaseTo(unban);
 			mUnBanList->SavePK();
 			delete unban;
+			unban = NULL;
 		}
 		i++;
 	}
 	mQuery.Clear();
 	if(deleteEntry) {
-		mQuery.OStream() << "DELETE FROM " << this->mMySQLTable.mName << " WHERE ";
+		mQuery.OStream() << "delete from " << this->mMySQLTable.mName << " where ";
 		AddTestCondition(mQuery.OStream() , value, mask);
 		mQuery.Query();
 		mQuery.Clear();
@@ -570,6 +571,7 @@ void cBanList::DelNickTempBan(const string &nick)
 	if (tban) {
 		mTempNickBanlist.RemoveByHash(hash);
 		delete tban;
+		tban = NULL;
 	}
 }
 
@@ -581,6 +583,7 @@ void cBanList::DelIPTempBan(const string &ip)
 	if (tban) {
 		mTempIPBanlist.RemoveByHash(hash);
 		delete tban;
+		tban = NULL;
 	}
 }
 
@@ -626,6 +629,7 @@ int cBanList::RemoveOldShortTempBans(long before)
 		if(!before || (Until< before)) {
 			this->mTempNickBanlist.RemoveByHash(Hash);
 			delete tban;
+			tban = NULL;
 			n++;
 		}
 	}
@@ -638,6 +642,7 @@ int cBanList::RemoveOldShortTempBans(long before)
 		if(!before || (Until< before)) {
 			this->mTempIPBanlist.RemoveByHash(Hash);
 			delete tban;
+			tban = NULL;
 			n++;
 		}
 	}

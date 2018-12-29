@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -39,8 +39,8 @@ cMessageParser::cMessageParser(int MaxChunks):
 	mChunks(MaxChunks),
 	mChStrings(NULL),
 	mChStrMap(0l),
-	Overfill(false),
-	Received(false),
+	//Overfill(false),
+	//Received(false),
 	mError(false),
 	mModified(false),
 	mType(eMSG_UNPARSED),
@@ -68,8 +68,8 @@ void cMessageParser::ReInit()
 	mChunks.resize(mMaxChunks);
 	mLen = 0;
 	mChStrMap = 0l;
-	Overfill = false;
-	Received = false;
+	//Overfill = false;
+	//Received = false;
 	mError = false;
 	mModified = false;
 	mStr.resize(0);
@@ -84,7 +84,7 @@ void cMessageParser::ApplyChunk(unsigned int n)
 	if (!n)
 		return;
 
-	if (n > mChunks.size())
+	if (n >= mChunks.size())
 		return;
 
 	unsigned long flag = 1 << n;
@@ -102,28 +102,22 @@ string &cMessageParser::ChunkString(unsigned int n)
 	if (!n) // the zeroth string is always the complete one, and its pointer is reserved for the empty string
 		return mStr;
 
-	if (n > mChunks.size()) // this should never happen, but if it happens, we are prepared
+	if (n >= mChunks.size()) // this should never happen, but if it happens, we are prepared
 		return mChStrings[0];
 
 	unsigned long flag = 1 << n;
 
 	if (!(mChStrMap & flag)) {
 		mChStrMap |= flag;
+		tChunk &chu = mChunks[n];
 
-		try {
-			tChunk &chu = mChunks[n];
-
-			if ((chu.first >= 0) && (chu.second >= 0) && ((unsigned int)chu.first <= mStr.length()) && ((unsigned int)chu.second <= mStr.length())) { // chunk can be empty
-				mChStrings[n].assign(mStr, chu.first, chu.second);
-			} else if (ErrLog(1)) {
-				LogStream() << "Error in parsing message, chunk " << n << ": " << mStr << endl;
-			}
-
-			ShrinkStringToFit(mChStrings[n]);
-		} catch (...) {
-			if (ErrLog(1))
-				LogStream() << "Exception in chunk string" << endl;
+		if ((chu.first >= 0) && (chu.second >= 0) && ((unsigned int)chu.first <= mStr.length()) && ((unsigned int)chu.second <= mStr.length())) { // chunk can be empty
+			mChStrings[n].assign(mStr, chu.first, chu.second);
+		} else if (ErrLog(1)) {
+			LogStream() << "Error in parsing message, chunk " << n << ": " << mStr << endl;
 		}
+
+		ShrinkStringToFit(mChStrings[n]);
 	}
 
 	return mChStrings[n];

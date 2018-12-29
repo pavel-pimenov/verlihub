@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -193,16 +193,18 @@ int cDCConsole::OpCommand(const string &str, cConnDC *conn)
 			if (cmdid == "unhidekick" || cmdid == "uhk") return CmdUnHideKick(cmd_line, conn);
 			if (cmdid == "commands" || cmdid == "cmds") return CmdCmds(cmd_line, conn);
 
-			try {
+			//try {
 				if (mCmdr.ParseAll(str, os, conn) >= 0) {
 					mOwner->DCPublicHS(os.str().c_str(), conn);
 					return 1;
 				}
+			/*
 			} catch (const char *ex) {
 				if(Log(0)) LogStream() << "Exception in command: " << ex << endl;
 			} catch (...) {
 				if(Log(0)) LogStream() << "Exception in command." << endl;
 			}
+			*/
 			break;
 		default:
 			return 0;
@@ -521,7 +523,7 @@ int cDCConsole::CmdCCBroadcast(istringstream &cmd_line, cConnDC *conn, int cl_mi
 		mOwner->LastBCNick = conn->mpUser->mNick;
 
 	unsigned int count = mOwner->SendToAllWithNickCCVars(start, end, cl_min, cl_max, cc_zone);
-	TimeAfter.Get();
+	TimeAfter = mOwner->mTime;
 	ostr << autosprintf(ngettext("Message delivered to %d user in zones %s in %s.", "Message delivered to %d users in zones %s in %s.", count),
 	     count, cc_zone.c_str(), cTimePrint(TimeAfter - TimeBefore).AsPeriod().AsString().c_str());
 	mOwner->DCPublicHS(ostr.str(), conn);
@@ -657,7 +659,8 @@ int cDCConsole::CmdRInfo(istringstream &cmd_line, cConnDC *conn)
 	os << " [*] " << _("Donation") << ":\r\n\r\n";
 	os << "\tPayPal: https://paypal.me/feardc/\r\n";
 	os << "\tBitCoin: 1DDckwdpRmwzJVpZ9QRkMTugQFEbft43Rw\r\n";
-	os << "\t" << _("Donators") << ": Deivis (75 EUR)\r\n";
+	os << "\tEthereum: 0xA24034373D87a28dCF1eEC394b1cEB0dAd8649D0\r\n";
+	os << "\t" << _("Donators") << ": Deivis (85 EUR)\r\n";
 
 	mOwner->DCPublicHS(os.str(), conn);
 	return 1;
@@ -687,12 +690,12 @@ int cDCConsole::CmdUInfo(istringstream &cmd_line, cConnDC *conn)
 	os << " [*] " << autosprintf(_("Class: %d [%s]"), ucl, mOwner->UserClassName(nEnums::tUserCl(ucl))) << "\r\n";
 
 	if (ucl == eUC_NORMUSER) {
-		if (conn->mpUser->IsPassive)
+		if (conn->mpUser->mPassive)
 			sear = mOwner->mC.int_search_pas;
 		else
 			sear = mOwner->mC.int_search;
 	} else if (ucl == eUC_REGUSER) {
-		if (conn->mpUser->IsPassive)
+		if (conn->mpUser->mPassive)
 			sear = mOwner->mC.int_search_reg_pas;
 		else
 			sear = mOwner->mC.int_search_reg;
@@ -709,7 +712,7 @@ int cDCConsole::CmdUInfo(istringstream &cmd_line, cConnDC *conn)
 	}
 
 	os << " [*] " << autosprintf(ngettext("Search interval: %d second", "Search interval: %d seconds", sear), sear) << "\r\n";
-	os << " [*] " << autosprintf(_("Mode: %s"), (conn->mpUser->IsPassive ? _("Passive") : _("Active"))) << "\r\n";
+	os << " [*] " << autosprintf(_("Mode: %s"), (conn->mpUser->mPassive ? _("Passive") : _("Active"))) << "\r\n";
 	os << " [*] " << autosprintf(_("Share: %s"), convertByte(conn->mpUser->mShare).c_str()) << "\r\n";
 	os << " [*] " << autosprintf(_("Hidden: %s"), (conn->mpUser->mHideShare ? _("Yes") : _("No"))) << "\r\n";
 	mOwner->DCPublicHS(os.str(), conn);
@@ -1068,12 +1071,16 @@ int cDCConsole::CmdUserLimit(istringstream &cmd_line, cConnDC *conn)
 
 	cInterpolExp *fn = new cInterpolExp(mOwner->mC.max_users_total, maximum, (60 * minutes) / mOwner->timer_serv_period, (60 * minutes) / mOwner->timer_serv_period); // 60 steps at most
 
+	/* todo: use try instead
 	if (fn) {
+	*/
 		mOwner->mTmpFunc.push_back((cTempFunctionBase*)fn);
 		ostr << autosprintf(ngettext("Updating max_users variable to %d for the duration of %d minute.", "Updating max_users variable to %d for the duration of %d minutes.", minutes), maximum, minutes);
+	/*
 	} else {
 		ostr << autosprintf(ngettext("Failed to update max_users variable to %d for the duration of %d minute.", "Failed to update max_users variable to %d for the duration of %d minutes.", minutes), maximum, minutes);
 	}
+	*/
 
 	mOwner->DCPublicHS(ostr.str(), conn);
 	return 1;
@@ -1243,7 +1250,7 @@ int cDCConsole::CmdProtect(istringstream &cmd_line, cConnDC *conn)
 
 int cDCConsole::CmdReload(istringstream &cmd_line, cConnDC *conn)
 {
-	mOwner->Reload();
+	mOwner->ReloadNow();
 	mOwner->DCPublicHS(_("Done reloading all lists and databases."), conn);
 	return 1;
 }
@@ -1645,7 +1652,7 @@ bool cDCConsole::cfBan::operator()()
 		if (tmp != "perm") {
 			BanTime = mS->Str2Period(tmp, *mOS);
 
-			if (BanTime < 0) {
+			if (BanTime == 0) {
 				(*mOS) << _("Please provide a valid ban time.");
 				return false;
 			}
@@ -1714,7 +1721,7 @@ bool cDCConsole::cfBan::operator()()
 			else
 				Ban.mReason = _("No reason specified"); // default reason, doesnt work when no reason is specified, bad regexp
 
-			Ban.mDateStart = cTimePrint().Sec();
+			Ban.mDateStart = mS->mTime.Sec();
 
 			if (BanTime)
 				Ban.mDateEnd = Ban.mDateStart + BanTime;
@@ -1736,7 +1743,7 @@ bool cDCConsole::cfBan::operator()()
 
 						mParRex->Extract(BAN_REASON, mParStr, Kick.mReason);
 						Kick.mOp = mConn->mpUser->mNick;
-						Kick.mTime = cTimePrint().Sec();
+						Kick.mTime = mS->mTime.Sec();
 
 						if (BanType == eBF_NICK)
 							Kick.mNick = Who;
@@ -2282,7 +2289,7 @@ bool cDCConsole::cfGag::operator()()
 	pen.mOpNick = mConn->mpUser->mNick;
 
 	if (!isun)
-		now = cTimePrint().Sec() + per;
+		now = mS->mTime.Sec() + per;
 
 	switch (act) {
 		case eAC_GAG:
@@ -2749,7 +2756,7 @@ bool cDCConsole::cfKick::operator()()
 				pen.mNick = nick;
 
 			pen.mOpNick = mConn->mpUser->mNick;
-			pen.mStartChat = (unsigned long)((act == eAC_GAG) ? cTimePrint().Sec() + mS->mC.tban_kick : 1);
+			pen.mStartChat = (unsigned long)((act == eAC_GAG) ? mS->mTime.Sec() + mS->mC.tban_kick : 1);
 
 			if ((act == eAC_GAG) ? !mS->mPenList->AddPenalty(pen) : !mS->mPenList->RemPenalty(pen)) {
 				(*mOS) << autosprintf(_("Error setting rights or restrictions for user: %s"), pen.mNick.c_str());
@@ -2847,6 +2854,11 @@ bool cDCConsole::cfPlug::operator()()
 			if (mParRex->PartFound(1)) {
 				mParRex->Extract(1, mParStr, tmp);
 
+				if (tmp == PLUGMAN_NAME) {
+					(*mOS) << _("You don't want to unload Plugman because all other plugins are loaded via it.");
+					return true;
+				}
+
 				if (!mS->mPluginManager.UnloadPlugin(tmp))
 					return false;
 			}
@@ -2865,6 +2877,11 @@ bool cDCConsole::cfPlug::operator()()
 			break;
 		case eAC_RELOAD:
 			if (GetParStr(1, tmp)) {
+				if (tmp == PLUGMAN_NAME) {
+					(*mOS) << _("You don't want to reload Plugman because all other plugins are loaded via it.");
+					return true;
+				}
+
 				if (!mS->mPluginManager.ReloadPlugin(tmp)) {
 					(*mOS) << mS->mPluginManager.GetError();
 					return false;
@@ -3048,12 +3065,12 @@ bool cDCConsole::cfRegUsr::operator()()
 			break;
 
 		case eAC_INFO:
-			authorized = (RegFound && (MyClass >= eUC_OPERATOR));
+			authorized = RegFound;
 			break;
 	}
 
 	if (MyClass == eUC_MASTER)
-		authorized = (RegFound || (!RegFound && (Action == eAC_NEW)));
+		authorized = (RegFound || (Action == eAC_NEW));
 
 	if (!authorized) {
 		if (!RegFound && (Action != eAC_NEW))
@@ -3514,7 +3531,7 @@ bool cDCConsole::cfBc::operator()()
 		mS->LastBCNick = mConn->mpUser->mNick;
 
 	int count = mS->SendToAllWithNickVars(start, end, MinClass, MaxClass);
-	TimeAfter.Get();
+	TimeAfter = mS->mTime;
 	*mOS << autosprintf(ngettext("Message delivered to %d user in %s.", "Message delivered to %d users in %s.", count),
 	     count, cTimePrint(TimeAfter - TimeBefore).AsPeriod().AsString().c_str());
 	return true;

@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -63,6 +63,7 @@ cpiLua::~cpiLua()
 	if (mQuery != NULL) {
 		mQuery->Clear();
 		delete mQuery;
+		mQuery = NULL;
 	}
 
 	this->Empty();
@@ -202,10 +203,16 @@ bool cpiLua::AutoLoad()
 	for (size_t i = 0; i < filenames.size(); i++) {
 		filename = filenames[i];
 		pathname = mScriptDir + filename;
-		cLuaInterpreter *ip = new cLuaInterpreter(config, pathname);
+		cLuaInterpreter *ip = NULL;
 
-		if (!ip)
+		try {
+			ip = new cLuaInterpreter(config, pathname);
+		} catch (...) {
+			if (Log(1))
+				LogStream() << "Failed creating cLuaInterpreter for script: " << filename << endl;
+
 			continue;
+		}
 
 		if (ip->Init()) {
 			AddData(ip);

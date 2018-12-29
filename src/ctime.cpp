@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -19,14 +19,20 @@
 */
 
 #include "ctime.h"
+
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+	#include <config.h>
 #endif
+
 #include <sstream>
 #include <string.h>
+
+/*
 #if defined _WIN32
-#include <windows.h>
+	#include <windows.h>
 #endif
+*/
+
 #include "i18n.h"
 
 using namespace std;
@@ -35,8 +41,7 @@ namespace nVerliHub {
 	namespace nUtils {
 
 cTime::~cTime()
-{
-}
+{}
 
 string cTimePrint::AsString() const
 {
@@ -45,27 +50,16 @@ string cTimePrint::AsString() const
 	return os.str();
 }
 
-std::ostream & operator<< (std::ostream &os, const cTimePrint &t)
+std::ostream& operator<<(std::ostream &os, const cTimePrint &t)
 {
-	#ifdef _WIN32
-		static char *buf;
-	#else
-		#define CTIME_BUFFSIZE 26
-		static char buf[CTIME_BUFFSIZE + 1];
-	#endif
-
+	#define CTIME_BUFFSIZE 26
+	static char buf[CTIME_BUFFSIZE + 1];
 	long n, rest, i;
 	ostringstream ostr;
 
 	switch (t.mPrintType) {
 		case 1:
-			#ifdef _WIN32
-				buf = ctime((const time_t*) & (t.tv_sec));
-			#else
-				strftime(buf, CTIME_BUFFSIZE + 1, "%Y-%m-%d %H:%M:%S", localtime((const time_t*) & (t.tv_sec)));
-			#endif
-
-			buf[strlen(buf)] = 0;
+			strftime(buf, CTIME_BUFFSIZE + 1, "%Y-%m-%d %H:%M:%S", localtime((const time_t*) & (t.tv_sec)));
 			os << buf;
 			break;
 
@@ -75,14 +69,18 @@ std::ostream & operator<< (std::ostream &os, const cTimePrint &t)
 			n = rest / (24 * 3600 * 7);
 			rest %= (24 * 3600 * 7);
 
-			if ((n > 0) && (++i <= 2))
+			if (n > 0) {
+				++i;
 				ostr << ' ' << autosprintf(ngettext("%ld week", "%ld weeks", n), n);
+			}
 
 			n = rest / (24 * 3600);
 			rest %= (24 * 3600);
 
-			if ((n > 0) && (++i <= 2))
+			if (n > 0) {
+				++i;
 				ostr << ' ' << autosprintf(ngettext("%ld day", "%ld days", n), n);
+			}
 
 			n = rest / 3600;
 			rest %= 3600;

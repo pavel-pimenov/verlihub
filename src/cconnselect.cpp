@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2017 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -19,14 +19,16 @@
 */
 
 #include "cconnselect.h"
+
 #if ! HAVE_SYS_POLL_H
 
 namespace nVerliHub {
 	using namespace nEnums;
+
 	namespace nSocket {
+
 cConnSelect::cConnSelect()
-{
-}
+{}
 
 cConnSelect::~cConnSelect()
 {
@@ -41,8 +43,9 @@ cConnSelect::~cConnSelect()
 		if (FD)
 		{
 			sock = FD->mSock;
-			delete FD;
 			mFDs.RemoveByHash(sock);
+			delete FD;
+			FD = NULL;
 		}
 	}
 }
@@ -80,8 +83,9 @@ void cConnSelect::OptOut(tSocket sock, tChEvent mask)
 		FD->mEvent -= (FD->mEvent & mask);
 		if(!FD->mEvent)
 		{
-			delete FD;
 			mFDs.RemoveByHash(sock);
+			delete FD;
+			FD = NULL;
 		}
 	}
 }
@@ -143,6 +147,7 @@ void cConnSelect::FDSet2HashRevents(sFDSet &fdset, unsigned mask)
 {
 	unsigned i;
 	tSocket sock;
+	/*
 	#ifdef _WIN32
 	for(i = 0; i < fdset.fd_count; i++)
 	{
@@ -162,6 +167,7 @@ void cConnSelect::FDSet2HashRevents(sFDSet &fdset, unsigned mask)
 		}
 	}
 	#else
+	*/
 	for(i = 0; i < FD_SETSIZE; i++)
 	{
 		sock = i;
@@ -182,9 +188,10 @@ void cConnSelect::FDSet2HashRevents(sFDSet &fdset, unsigned mask)
 			}
 		}
 	}
-	#endif
+	//#endif
 }
 
 	}; // namespace nSocket
 }; // namespace nVerliHub
+
 #endif

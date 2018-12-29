@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2017 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -33,29 +33,33 @@
 #endif // TEMP_FAILURE_RETRY
 
 #ifndef TEMP_FAILURE_RETRY
-	#if !defined _WIN32
+	//#if !defined _WIN32
 		#define TEMP_FAILURE_RETRY(expression) \
 		(__extension__ ({ long int __result;\
 		while ((__result = (long int) (expression)) == -1L && errno == EINTR){}; __result; }))
+	/*
 	#else // _WIN32
 		#define TEMP_FAILURE_RETRY(expression) while ((long int) (expression) == -1L && errno == EINTR){}
 	#endif // _WIN32
+	*/
 #endif
 
+/*
 #ifdef _WIN32
 	#define USE_SELECT 1
 #else
+*/
 	#if HAVE_SYS_POLL_H
 		#define USE_SELECT 0
 	#else
 		#define USE_SELECT 1
 	#endif
-#endif // _WIN32
+//#endif // _WIN32
 
 #include "ctime.h"
 #include "cconnbase.h"
 
-#ifndef _WIN32
+//#ifndef _WIN32
 	#ifndef USE_OLD_CONNLIST
 		#include <vector>
 		using std::vector;
@@ -64,9 +68,11 @@
 		#include "tchashlistmap.h"
 		using std::map;
 	#endif // USE_OLD_CONNLIST
+/*
 #else
 	#include "thasharray.h"
 #endif // _WIN32
+*/
 
 namespace nVerliHub {
 	using namespace nUtils;
@@ -119,15 +125,17 @@ public:
 	cConnChoose();
 	virtual ~cConnChoose();
 
-	#ifndef _WIN32
+	//#ifndef _WIN32
 	#ifdef USE_OLD_CONNLIST
 	typedef tcHashListMap <cConnBase* , tSocket> tConnList;
 	#else
 	typedef vector<cConnBase*> tConnList;
 	#endif
+	/*
 	#else
 	typedef tHashArray<cConnBase*> tConnList;
 	#endif
+	*/
 
 	/**
 	* Add new connection to be handled by connection manager.
@@ -186,7 +194,13 @@ public:
 		int mEvent;
 		int mRevent;
 		cConnBase *mConn;
-		sChooseRes():mSock(0), mEvent(nEnums::tChEvent(0)), mRevent(nEnums::tChEvent(0)), mConn(NULL){}
+
+		sChooseRes():
+			mSock(0),
+			mEvent(nEnums::eCC_INPUT),
+			mRevent(nEnums::eCC_INPUT),
+			mConn(NULL)
+		{}
 	};
 
 	#if 1
@@ -208,7 +222,7 @@ public:
 			while( (++mRes.mSock <= *mEnd) && !(mChoose->RevTest(mRes.mSock)) ){
 			}
 			return *this;
-		};
+		}
 
 		sChooseRes & operator*()
 		{
@@ -216,7 +230,7 @@ public:
 			mRes.mRevent = mChoose->RevGet(mRes.mSock);
 			mRes.mConn  = mChoose->operator[](mRes.mSock);
 			return mRes;
-		};
+		}
 
 		bool operator!=(const iterator &it) const
 		{
@@ -235,6 +249,9 @@ public:
 			mChoose = it.mChoose;
 			return *this;
 		}
+
+		private:
+			iterator(const iterator &it);
 	};
 
 	iterator &begin()
@@ -243,7 +260,7 @@ public:
 		sBegin.mRes.mSock = 0;
 		if( !RevTest(tSocket(0)) ) ++sBegin;
 		return sBegin;
-	};
+	}
 
 	iterator &end()
 	{
@@ -285,7 +302,7 @@ public:
 			mRes.mRevent = mChoose->RevGet(mRes.mSock);
 			mRes.mConn  = *mIterator;
 			return mRes;
-		};
+		}
 
 		bool operator!=(const iterator &it) const
 		{
@@ -313,7 +330,7 @@ public:
 		if(!RevTest((*(mConnList.begin()))->operator tSocket()))
 			++sBegin;
 		return sBegin;
-	};
+	}
 
 	iterator &end()
 	{

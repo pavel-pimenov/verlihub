@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -42,6 +42,7 @@ cBan::cBan(cServerDC *s):
 	mType = 0;
 	mRangeMin = 0;
 	mRangeMax = 0;
+	//mDisplayType = 0;
 }
 
 cBan::~cBan()
@@ -49,7 +50,9 @@ cBan::~cBan()
 
 cUnBan::cUnBan(cServerDC *s):
 	cBan(s)
-{}
+{
+	mDateUnban = 0;
+}
 
 cUnBan::cUnBan(cBan &Ban, cServerDC *s):
 	cBan(s)
@@ -66,6 +69,7 @@ cUnBan::cUnBan(cBan &Ban, cServerDC *s):
 	mNickOp = Ban.mNickOp;
 	mReason = Ban.mReason;
 	mType = Ban.mType;
+	mDateUnban = 0;
 }
 
 cUnBan::~cUnBan()
@@ -73,9 +77,12 @@ cUnBan::~cUnBan()
 
 ostream & operator << (ostream &os, cBan &ban)
 {
+	/*
 	switch (ban.mDisplayType) {
 		case 0:
+	*/
 			ban.DisplayComplete(os);
+	/*
 			break;
 		case 1:
 			ban.DisplayUser(os);
@@ -87,6 +94,7 @@ ostream & operator << (ostream &os, cBan &ban)
 			os << _("Unknown");
 			break;
 	}
+	*/
 
 	return os;
 }
@@ -121,7 +129,7 @@ void cBan::DisplayUser(ostream &os)
 	os << " [*] " << _("Time") << ": ";
 
 	if (mDateEnd) {
-		cTimePrint HowLong(mDateEnd - cTime().Sec());
+		cTimePrint HowLong(mDateEnd - mS->mTime.Sec());
 		os << autosprintf(_("%s left"), HowLong.AsPeriod().AsString().c_str());
 	} else {
 		os << _("Permanently");
@@ -154,7 +162,7 @@ void cBan::DisplayComplete(ostream &os)
 	os << " [*] " << _("Last hit") << ": ";
 
 	if (mLastHit)
-		os << autosprintf(_("%s ago"), cTimePrint(cTime().Sec() - mLastHit).AsPeriod().AsString().c_str());
+		os << autosprintf(_("%s ago"), cTimePrint(mS->mTime.Sec() - mLastHit).AsPeriod().AsString().c_str());
 	else
 		os << _("Never");
 
@@ -169,10 +177,17 @@ const char *cBan::GetBanType()
 
 void cBan::SetType(unsigned type)
 {
+	/*
+		Undefined behavior. Check the shift operator '<<'. The right operand ('mType' = [0..1023]) is greater than or equal to the length in bits of the promoted left operand.
+		this is false because: mType < nEnums::eBF_LAST
+	*/
+
 	for (mType = 0; mType < nEnums::eBF_LAST; mType++) {
 		if (type == (unsigned)(1 << mType))
-			break;
+			return;
 	}
+
+	mType = eBF_NICK; // default type in case we fail
 }
 
 void cUnBan::DisplayComplete(ostream &os)
@@ -186,7 +201,7 @@ void cBan::DisplayKick(ostream &os)
 	os << "\t\t";
 
 	if (mDateEnd) {
-		cTimePrint HowLong(mDateEnd - cTime().Sec(), 0);
+		cTimePrint HowLong(mDateEnd - mS->mTime.Sec(), 0);
 
 		if (HowLong.Sec() < 0) {
 			os << autosprintf(_("Expired %s"), cTimePrint(mDateEnd, 0).AsDate().AsString().c_str());
@@ -202,7 +217,7 @@ void cBan::DisplayKick(ostream &os)
 	os << "\t";
 
 	if (mLastHit)
-		os << cTimePrint(cTime().Sec() - mLastHit).AsPeriod().AsString();
+		os << cTimePrint(mS->mTime.Sec() - mLastHit).AsPeriod().AsString();
 	else
 		os << _("Never");
 }

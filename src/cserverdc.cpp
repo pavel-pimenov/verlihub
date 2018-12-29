@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -82,6 +82,7 @@ cServerDC::cServerDC(string CfgBase, const string &ExecPath):
 	mPassiveUsers(false, false, false),
 	mChatUsers(false, false, false),
 	mRobotList(true, false, false),
+	mReloadNow(false),
 	mUserCountTot(0),
 	mTotalShare(0),
 	mTotalSharePeak(0),
@@ -105,10 +106,11 @@ cServerDC::cServerDC(string CfgBase, const string &ExecPath):
 		vhLog(1) << "Setting locale message domain: " << ((res) ? res : "Error") << endl;
 	}
 
-	mSetupList.CreateTable();
+	mSetupList.CreateTable(); // must be done first
 	mC.AddVars();
 	mC.Save();
 	mC.Load();
+
 	mConnTypes = new cConnTypes(this);
 	mCo = new cDCConsole(this, mMySQL);
 	mR = new cRegList(mMySQL, this);
@@ -153,7 +155,7 @@ cServerDC::cServerDC(string CfgBase, const string &ExecPath):
 	if (mC.use_penlist_cache)
 		mPenList->ReloadCache();
 
-	mUserList.SetNickListStart("$NickList "); // setup userlists
+	mUserList.SetNickListStart("$NickList "); // set up userlists
 	mOpList.SetNickListStart("$OpList ");
 	mRobotList.SetNickListStart("$BotList ");
 	mUserList.SetNickListSeparator("$$");
@@ -161,21 +163,28 @@ cServerDC::cServerDC(string CfgBase, const string &ExecPath):
 	mRobotList.SetNickListSeparator("$$");
 	mOpchatList.SetNickListSeparator("\r\n");
 
-	string speed("\x1"), mail, share("0"), val_new, val_old; // add the bots
-	mHubSec = new cMainRobot((mC.hub_security.size() ? mC.hub_security : HUB_VERSION_NAME), this);
-	mHubSec->mClass = tUserCl(10);
-	mP.Create_MyINFO(mHubSec->mMyINFO, mHubSec->mNick, mC.hub_security_desc, speed, mail, share, false); // dont reserve for pipe, we are not sending this
-	AddRobot((cMainRobot*)mHubSec);
+	string tag, name(HUB_VERSION_NAME), vers(HUB_VERSION_VERS), flag("\x1"), mail, shar("0"), val_new, val_old; // add the bots
+	tag.reserve(1 + name.size() + 3 + vers.size() + 17);
+	tag.append(1, '<');
+	tag.append(name);
+	tag.append(" V:");
+	tag.append(vers);
+	tag.append(",M:A,H:0/0/1,S:0>");
 
 	if (mC.hub_security.empty())
 		SetConfig(mDBConf.config_name.c_str(), "hub_security", HUB_VERSION_NAME, val_new, val_old);
 	else if (mC.hub_security == mC.opchat_name)
 		SetConfig(mDBConf.config_name.c_str(), "opchat_name", "", val_new, val_old);
 
+	mHubSec = new cMainRobot(mC.hub_security, this);
+	mHubSec->mClass = tUserCl(10);
+	mP.Create_MyINFO(mHubSec->mMyINFO, mHubSec->mNick, mC.hub_security_desc + tag, flag, mail, shar, false); // dont reserve for pipe, we are not sending this
+	AddRobot((cMainRobot*)mHubSec);
+
 	if (mC.opchat_name.size()) {
 		mOpChat = new cOpChat(mC.opchat_name, this);
 		mOpChat->mClass = tUserCl(10);
-		mP.Create_MyINFO(mOpChat->mMyINFO, mOpChat->mNick, mC.opchat_desc, speed, mail, share, false); // dont reserve for pipe, we are not sending this
+		mP.Create_MyINFO(mOpChat->mMyINFO, mOpChat->mNick, mC.opchat_desc + tag, flag, mail, shar, false); // dont reserve for pipe, we are not sending this
 		AddRobot((cMainRobot*)mOpChat);
 	}
 
@@ -186,13 +195,6 @@ cServerDC::cServerDC(string CfgBase, const string &ExecPath):
 	mTotalSharePeak = 0;
 
 	mFactory = new cDCConnFactory(this);
-
-	try {
-		mPluginManager.LoadAll();
-	} catch (...) {
-		if (ErrLog(1))
-			LogStream() << "Plugin load error" << endl;
-	}
 
 	memset(mProtoCount, 0, sizeof(mProtoCount));
 	memset(mProtoTotal, 0, sizeof(mProtoTotal));
@@ -209,6 +211,8 @@ cServerDC::cServerDC(string CfgBase, const string &ExecPath):
 	mCtmToHubConf.mLast = this->mTime;
 	mCtmToHubConf.mStart = false;
 	mCtmToHubConf.mNew = 0;
+
+	mPluginManager.LoadAll(); // load all plugins at last
 }
 
 cServerDC::~cServerDC()
@@ -216,14 +220,8 @@ cServerDC::~cServerDC()
 	if (Log(1))
 		LogStream() << "Destructor cServerDC" << endl;
 
-	this->OnUnLoad(0);
-
-	try { // unload all plugins, todo: still broken, must be fixed
-		//mPluginManager.UnLoadAll();
-	} catch (...) {
-		if (ErrLog(1))
-			LogStream() << "Plugin unload error" << endl;
-	}
+	this->OnUnLoad(0); // tell all plugins and their scripts that we are shutting down
+	mPluginManager.UnLoadAll(); // unload all plugins first
 
 	CtmToHubClearList(); // ctm2hub
 
@@ -247,8 +245,10 @@ cServerDC::~cServerDC()
 	}
 
 	for (tTFIt i = mTmpFunc.begin(); i != mTmpFunc.end(); i++) { // destruct the lists of pointers
-		if (*i)
+		if (*i) {
 			delete *i;
+			(*i) = NULL;
+		}
 	}
 
 	close();
@@ -275,7 +275,7 @@ cServerDC::~cServerDC()
 
 	if (mR) {
 		delete mR;
-		mR= NULL;
+		mR = NULL;
 	}
 
 	if (mBanList) {
@@ -322,7 +322,7 @@ int cServerDC::StartListening(int OverrideDefaultPort)
 	while(i) {
 		i = 0;
 		is >> i;
-		if (i) cAsyncSocketServer::Listen(i, false);
+		if (i) cAsyncSocketServer::Listen(i/*, false*/);
 	}
 	return _result;
 }
@@ -442,7 +442,8 @@ bool cServerDC::AddRobot(cUserRobot *robot)
 {
 	if (AddToList(robot)) {
 		robot->mxServer = this;
-		return mRobotList.AddWithHash(robot, robot->mNickHash);
+		mRobotList.AddWithHash(robot, robot->mNickHash);
+		return true;
 	}
 
 	return false;
@@ -450,8 +451,10 @@ bool cServerDC::AddRobot(cUserRobot *robot)
 
 bool cServerDC::DelRobot(cUserRobot *robot)
 {
-	if (this->RemoveNick(robot))
-		return mRobotList.RemoveByHash(robot->mNickHash);
+	if (this->RemoveNick(robot)) {
+		mRobotList.RemoveByHash(robot->mNickHash);
+		return true;
+	}
 
 	return false;
 }
@@ -482,65 +485,74 @@ bool cServerDC::AddToList(cUser *user)
 
 	user->mInList = true;
 
-	if (user->IsPassive)
-		mPassiveUsers.AddWithHash(user, user->mNickHash);
-	else
-		mActiveUsers.AddWithHash(user, user->mNickHash);
+	if (user->mxConn) { // dont add bots to these lists
+		if (user->mPassive)
+			mPassiveUsers.AddWithHash(user, user->mNickHash);
+		else
+			mActiveUsers.AddWithHash(user, user->mNickHash);
+	}
 
 	if (((user->mClass >= mC.oplist_class) && !(user->mxConn && user->mxConn->mRegInfo && user->mxConn->mRegInfo->mHideKeys)) || (user->mxConn && user->mxConn->mRegInfo && user->mxConn->mRegInfo->mShowKeys && !user->mxConn->mRegInfo->mHideKeys))
 		mOpList.AddWithHash(user, user->mNickHash);
 
-	if (user->Can(eUR_OPCHAT, mTime.Sec()))
-		mOpchatList.AddWithHash(user, user->mNickHash);
+	if (user->mxConn) { // real users only
+		if (user->Can(eUR_OPCHAT, mTime.Sec()))
+			mOpchatList.AddWithHash(user, user->mNickHash);
 
-	if ((user->mClass >= eUC_OPERATOR) || mC.chat_default_on)
-		mChatUsers.AddWithHash(user, user->mNickHash);
-	else if (user->mxConn)
-		DCPublicHS(_("You won't see public chat messages, to restore use +chat command."), user->mxConn);
+		if ((user->mClass >= eUC_OPERATOR) || mC.chat_default_on)
+			mChatUsers.AddWithHash(user, user->mNickHash);
+		else
+			DCPublicHS(_("You won't see public chat messages, to restore use +chat command."), user->mxConn);
 
-	if (user->mxConn && user->mxConn->Log(3))
-		user->mxConn->LogStream() << "Adding at the end of nicklist, becomes in list" << endl;
+		if (user->mxConn->Log(3))
+			user->mxConn->LogStream() << "Adding user at the end of nicklist" << endl;
+
+	} else { // note: this will send myinfo, oplist, botlist and userip for bots, we no longer need to do this manually
+		ShowUserToAll(user);
+	}
 
 	return true;
 }
 
-bool cServerDC::RemoveNick(cUser *User)
+bool cServerDC::RemoveNick(cUser *user)
 {
-	if (mUserList.ContainsHash(User->mNickHash)) {
+	if (mUserList.ContainsHash(user->mNickHash)) {
 		#ifndef WITHOUT_PLUGINS
-			if (User->mxConn && User->mxConn->GetLSFlag(eLS_LOGIN_DONE) && User->mInList)
-				mCallBacks.mOnUserLogout.CallAll(User);
+			if (user->mxConn && user->mxConn->GetLSFlag(eLS_LOGIN_DONE) && user->mInList)
+				mCallBacks.mOnUserLogout.CallAll(user);
 		#endif
 
-		cUser *other = mUserList.GetUserByHash(User->mNickHash);
+		cUser *other = mUserList.GetUserByHash(user->mNickHash);
 
-		if (!User->mxConn)
-			mUserList.RemoveByHash(User->mNickHash);
-		else if (other && other->mxConn && User->mxConn && (other->mxConn == User->mxConn)) // make sure that the user we want to remove is the correct one
-			mUserList.RemoveByHash(User->mNickHash);
+		if (!user->mxConn)
+			mUserList.RemoveByHash(user->mNickHash);
+		else if (other && other->mxConn && (other->mxConn == user->mxConn)) // make sure that the user we want to remove is the correct one
+			mUserList.RemoveByHash(user->mNickHash);
 		else
 			return false;
 	}
 
-	if (mOpList.ContainsHash(User->mNickHash))
-		mOpList.RemoveByHash(User->mNickHash);
+	if (mOpList.ContainsHash(user->mNickHash))
+		mOpList.RemoveByHash(user->mNickHash);
 
-	if (mOpchatList.ContainsHash(User->mNickHash))
-		mOpchatList.RemoveByHash(User->mNickHash);
+	if (user->mxConn) { // only real users
+		if (mOpchatList.ContainsHash(user->mNickHash))
+			mOpchatList.RemoveByHash(user->mNickHash);
 
-	if (mActiveUsers.ContainsHash(User->mNickHash))
-		mActiveUsers.RemoveByHash(User->mNickHash);
+		if (mActiveUsers.ContainsHash(user->mNickHash))
+			mActiveUsers.RemoveByHash(user->mNickHash);
 
-	if (mPassiveUsers.ContainsHash(User->mNickHash))
-		mPassiveUsers.RemoveByHash(User->mNickHash);
+		if (mPassiveUsers.ContainsHash(user->mNickHash))
+			mPassiveUsers.RemoveByHash(user->mNickHash);
 
-	if (mChatUsers.ContainsHash(User->mNickHash))
-		mChatUsers.RemoveByHash(User->mNickHash);
+		if (mChatUsers.ContainsHash(user->mNickHash))
+			mChatUsers.RemoveByHash(user->mNickHash);
+	}
 
-	if (User->mInList) {
-		User->mInList = false;
+	if (user->mInList) {
+		user->mInList = false; // this will prevent user from receiving own quit
 		string omsg;
-		mP.Create_Quit(omsg, User->mNick, true); // reserve for pipe
+		mP.Create_Quit(omsg, user->mNick, true); // reserve for pipe
 		mUserList.SendToAll(omsg, mC.delayed_myinfo, true); // delayed myinfo implies delay of quit too, otherwise there would be mess in peoples userslists
 	}
 
@@ -885,7 +897,7 @@ unsigned int cServerDC::SearchToAll(cConnDC *conn, string &data, string &tths, b
 			if (!other || !other->ok || !other->mpUser || !other->mpUser->mInList) // base condition
 				continue;
 
-			if (other->mpUser->IsPassive && !(other->mpUser->mMyFlag & eMF_NAT)) // passive request to passive user, allow if other user supports nat connection
+			if (other->mpUser->mPassive && !(other->mpUser->mMyFlag & eMF_NAT)) // passive request to passive user, allow if other user supports nat connection
 				continue;
 
 			if (tth && !(other->mFeatures & eSF_TTHSEARCH)) // dont send to user without tth search support
@@ -942,7 +954,7 @@ unsigned int cServerDC::SearchToAll(cConnDC *conn, string &data, string &tths, b
 				if (other->mpUser->mNickHash == conn->mpUser->mNickHash) // dont send to self
 					continue;
 
-				if (conn->mpUser->mIsLan != other->mpUser->mIsLan) // filter lan to wan and reverse
+				if (conn->mpUser->mLan != other->mpUser->mLan) // filter lan to wan and reverse
 					continue;
 
 				if (tth && len_tths && (other->mFeatures & eSF_TTHS)) {
@@ -1263,7 +1275,7 @@ void cServerDC::AfterUserLogin(cConnDC *conn)
 		}
 	#endif
 
-	if ((conn->mpUser->mClass >= eUC_NORMUSER) && (conn->mpUser->mClass <= eUC_MASTER) && mC.msg_welcome[conn->mpUser->mClass].size()) {
+	if ((conn->mpUser->mClass >= eUC_NORMUSER) && mC.msg_welcome[conn->mpUser->mClass].size()) { // pingers dont have welcome messages
 		omsg.clear();
 		ReplaceVarInString(mC.msg_welcome[conn->mpUser->mClass], "nick", omsg, conn->mpUser->mNick); // todo: should not be uppercace %[NICK] ?
 		const size_t pos = omsg.find("%[C");
@@ -1290,7 +1302,7 @@ void cServerDC::AfterUserLogin(cConnDC *conn)
 		DCPublicHSToAll(omsg, mC.delayed_chat);
 	}
 
-	conn->mpUser->mIsLan = cDCProto::isLanIP(conn->AddrIP()); // detect lan ip
+	conn->mpUser->mLan = cDCProto::isLanIP(conn->AddrIP()); // detect lan ip
 }
 
 void cServerDC::DoUserLogin(cConnDC *conn)
@@ -1308,7 +1320,7 @@ void cServerDC::DoUserLogin(cConnDC *conn)
 
 	cPenaltyList::sPenalty pen; // users special rights and restrictions
 
-	if (mPenList->LoadTo(pen, conn->mpUser->mNick) && (conn->mpUser->mClass != eUC_PINGER))
+	if ((conn->mpUser->mClass != eUC_PINGER) && mPenList->LoadTo(pen, conn->mpUser->mNick))
 		conn->mpUser->ApplyRights(pen);
 
 	if (!AddToList(conn->mpUser)) { // insert user to userlist
@@ -1332,7 +1344,7 @@ void cServerDC::DoUserLogin(cConnDC *conn)
 	SendHeaders(conn, 1);
 	AfterUserLogin(conn);
 	conn->ClearTimeOut(eTO_LOGIN);
-	conn->mpUser->mT.login.Get();
+	conn->mpUser->mT.login = mTime;
 }
 
 /*
@@ -1354,7 +1366,7 @@ bool cServerDC::BeginUserLogin(cConnDC *conn)
 
 		if (conn->mSendNickList) { // this may not send all data at once
 			mP.NickList(conn); // this will set mNickListInProgress
-			conn->mSendNickList = false;
+			//conn->mSendNickList = false;
 		}
 	} else {
 		return false;
@@ -1365,22 +1377,31 @@ bool cServerDC::BeginUserLogin(cConnDC *conn)
 
 bool cServerDC::ShowUserToAll(cUser *user)
 {
-	string msg;
-	msg.reserve(user->mMyINFO.size() + 1); // first use, reserve for pipe
-	msg = user->mMyINFO;
-	mUserList.SendToAll(msg, mC.delayed_myinfo, true); // all users get myinfo, use cache, so this can be after user is added
+	string data;
+	data.reserve(user->mMyINFO.size() + 1); // first use, reserve for pipe
+	data = user->mMyINFO;
+	mUserList.SendToAll(data, mC.delayed_myinfo, true); // all users get myinfo, use cache, so this can be after user is added
 
 	if (((user->mClass >= mC.oplist_class) && !(user->mxConn && user->mxConn->mRegInfo && user->mxConn->mRegInfo->mHideKeys)) || (user->mxConn && user->mxConn->mRegInfo && user->mxConn->mRegInfo->mShowKeys && !user->mxConn->mRegInfo->mHideKeys)) { // send short oplist
-		mP.Create_OpList(msg, user->mNick, true); // reserve for pipe
-		mUserList.SendToAll(msg, mC.delayed_myinfo, true);
+		mP.Create_OpList(data, user->mNick, true); // reserve for pipe
+		mUserList.SendToAll(data, mC.delayed_myinfo, true);
 	}
 
-	if (mC.send_user_ip && user->mxConn) { // send userip to operators
-		mP.Create_UserIP(msg, user->mNick, user->mxConn->AddrIP(), true); // reserve for pipe
-		mUserList.SendToAllWithClassFeature(msg, mC.user_ip_class, eUC_MASTER, eSF_USERIP2, mC.delayed_myinfo, true); // must be delayed too
+	if (mC.send_user_ip) { // send userip to operators
+		if (user->mxConn) // real user
+			mP.Create_UserIP(data, user->mNick, user->mxConn->AddrIP(), true); // reserve for pipe
+		else // bots have local ip
+			mP.Create_UserIP(data, user->mNick, "127.0.0.1", true); // reserve for pipe
+
+		mUserList.SendToAllWithClassFeature(data, mC.user_ip_class, eUC_MASTER, eSF_USERIP2, mC.delayed_myinfo, true); // must be delayed too
 	}
 
-	user->mInList = false;
+	if (!user->mxConn) { // send short botlist to users with this feature
+		mP.Create_BotList(data, user->mNick, true); // reserve for pipe
+		mUserList.SendToAllWithFeature(data, eSF_BOTLIST, mC.delayed_myinfo, true);
+	}
+
+	user->mInList = false; // note: this will prevent user from getting own myinfo, oplist and userip, i guess its done elsewhere
 	mUserList.FlushCache();
 	user->mInList = true;
 	return true;
@@ -1399,40 +1420,46 @@ bool cServerDC::MinDelay(cTime &then, unsigned int min, bool update)
 			use timeins instead of mindelay, or change to microsecond resolution
 	*/
 
+	/*
 	cTime now;
 	cTime diff = now - then;
+	*/
 
-	if (diff.Sec() >= (long)min) {
-		then = now;
+	if ((mTime.Sec() - then.Sec()) >= (long)min) { // diff.Sec()
+		then = mTime; // now
 		return true;
 	}
 
 	if (update) // update timestamp
-		then = now;
+		then = mTime; // now
 
 	return false;
 }
 
 bool cServerDC::MinDelayMS(cTime &then, unsigned long min, bool update)
 {
+	/*
 	cTime now;
 	cTime diff = now - then;
+	*/
 
-	if (diff.MiliSec() >= (__int64)min) {
-		then = now;
+	if ((mTime.MiliSec() - then.MiliSec()) >= (__int64)min) { // diff.MiliSec()
+		then = mTime; // now
 		return true;
 	}
 
 	if (update) // update timestamp
-		then = now;
+		then = mTime; // now
 
 	return false;
 }
 
+/*
 bool cServerDC::AllowNewConn()
 {
 	return (mConnList.size() <= (unsigned)(mC.max_users_total + mC.max_extra_regs + mC.max_extra_vips + mC.max_extra_ops + mC.max_extra_cheefs + mC.max_extra_admins + 300));
 }
+*/
 
 int cServerDC::SaveFile(const string &file, const string &text)
 {
@@ -1628,7 +1655,7 @@ int cServerDC::ValidateUser(cConnDC *conn, const string &nick, int &closeReason)
 
 tVAL_NICK cServerDC::ValidateNick(cConnDC *conn, const string &nick, string &more)
 {
-	string bad_nick_chars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN));
+	static const string bad_nick_chars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN));
 	bool bad = false;
 	unsigned i;
 	char chr;
@@ -1721,12 +1748,12 @@ tVAL_NICK cServerDC::ValidateNick(cConnDC *conn, const string &nick, string &mor
 int cServerDC::OnTimer(cTime &now)
 {
 	mUserList.FlushCache();
-	mOpList.FlushCache();
+	//mOpList.FlushCache(); // we are not sending anything to operators, only nicks are used
 	mOpchatList.FlushCache();
 	mActiveUsers.FlushCache();
 	mPassiveUsers.FlushCache();
 	mChatUsers.FlushCache();
-	mRobotList.FlushCache();
+	//mRobotList.FlushCache(); // we are not sending anything to bots, they are bots
 	mSysLoad = eSL_NORMAL;
 
 	if (mFrequency.mNumFill > 0) {
@@ -1745,8 +1772,9 @@ int cServerDC::OnTimer(cTime &now)
 			mSysLoad = eSL_SYSTEM_DOWN;
 	}
 
+	unsigned int zone;
+
 	if (mC.max_upload_kbps > 0.00001) {
-		unsigned int zone;
 		double total_upload = 0.;
 
 		for (zone = 0; zone <= USER_ZONES; zone++)
@@ -1773,6 +1801,9 @@ int cServerDC::OnTimer(cTime &now)
 	if (bool(mHublistTimer.mMinDelay) && (mHublistTimer.Check(mTime, 1) == 0))
 		this->RegisterInHublist(mC.hublist_host, mC.hublist_port, NULL);
 
+	if (mReloadNow) // reload now
+		this->ReloadNow();
+
 	if (bool(mReloadcfgTimer.mMinDelay) && (mReloadcfgTimer.Check(mTime, 1) == 0)) {
 		mC.Load();
 		//mCo->mTriggers->ReloadAll();
@@ -1782,6 +1813,19 @@ int cServerDC::OnTimer(cTime &now)
 
 		if (mC.use_penlist_cache)
 			mPenList->UpdateCache();
+
+		/*
+			todo
+				we have a bug where current upload counter is failing sometimes
+				during high cpu usage when hub hangs it starts to show wrong values
+				Other users: 5433 of 10000 [33.04 KB/s] - while real hub upload is around 3-4 mb/s
+				temporarily we try to reset the counter every timer_reloadcfg_period - 300 seconds by default
+		*/
+
+		for (zone = 0; zone <= USER_ZONES; zone++)
+			this->mUploadZone[zone].Reset(now);
+
+		mFrequency.Reset(now); // todo: same as above
 
 		if (Log(2))
 			LogStream() << "Socket counter: " << cAsyncConn::sSocketCounter << endl;
@@ -1923,15 +1967,11 @@ int cServerDC::DoRegisterInHublist(string host, unsigned int port, string reply)
 		to_user << autosprintf(_("Sending information to: %s:%d"), curhost.c_str(), port) << " .. ";
 		pHubList = new cHTTPConn(curhost, port); // connect
 
-		if (!pHubList || !pHubList->mGood) {
+		if (!pHubList->mGood) {
 			to_user << _("Connection error") << "\r\n";
-
-			if (pHubList) {
-				pHubList->Close();
-				delete pHubList;
-				pHubList = NULL;
-			}
-
+			pHubList->Close();
+			delete pHubList;
+			pHubList = NULL;
 			continue;
 		}
 
@@ -2185,7 +2225,7 @@ unsigned int cServerDC::CntConnIP(const unsigned long ip)
 	return tot;
 }
 
-bool cServerDC::CheckUserClone(cConnDC *conn, string &clone)
+bool cServerDC::CheckUserClone(cConnDC *conn, string &clone) // todo: add config for zero share clones
 {
 	if (!mC.clone_detect_count || !conn || !conn->mpUser || !conn->mpUser->mShare || (conn->mpUser->mClass > int(mC.max_class_check_clone)))
 		return false;
@@ -2592,22 +2632,24 @@ void cServerDC::DCKickNick(ostream *use_os, cUser *op, const string &nick, const
 					user->mxConn->LogStream() << "Kicked by " << op->mNick << " because: " << why << endl;
 
 				string temp;
-				user->mToBan = false;
+				unsigned long ban_time = 0;
+				//user->mToBan = false;
+				bool to_ban = false;
 
 				if ((flags & eKI_WHY) && why.size() && (mP.mKickBanPattern.Exec(why) >= 0)) {
-					unsigned int age = 0;
+					//unsigned int age = 0;
 					mP.mKickBanPattern.Extract(1, why, temp);
 
 					if (temp.size())
-						age = Str2Period(temp, os);
+						ban_time = Str2Period(temp, os);
 
-					if (age > mC.tban_max)
-						age = mC.tban_max;
+					if (ban_time > mC.tban_max)
+						ban_time = mC.tban_max;
 
-					if ((!age && op->Can(eUR_PBAN, mTime)) || (age && (((age > mC.tban_kick) && op->Can(eUR_TBAN, mTime)) || (age <= mC.tban_kick))))
-						user->mToBan = true;
+					if ((!ban_time && op->Can(eUR_PBAN, mTime)) || (ban_time && (((ban_time > mC.tban_kick) && op->Can(eUR_TBAN, mTime)) || (ban_time <= mC.tban_kick))))
+						to_ban = true; //user->mToBan = true;
 
-					user->mBanTime = age;
+					//user->mBanTime = age;
 
 					if (mC.msg_replace_ban.size())
 						mP.mKickBanPattern.Replace(0, new_why, mC.msg_replace_ban);
@@ -2642,10 +2684,10 @@ void cServerDC::DCKickNick(ostream *use_os, cUser *op, const string &nick, const
 				if (note_usr.size())
 					ban.mNoteUsr = note_usr;
 
-				mBanList->NewBan(ban, kick, (user->mToBan ? user->mBanTime : mC.tban_kick), eBF_NICKIP);
+				mBanList->NewBan(ban, kick, (/*user->mToBan*/to_ban ? /*user->mBanTime*/ban_time : mC.tban_kick), eBF_NICKIP);
 
 				if (ban.mDateEnd) {
-					cTimePrint age(ban.mDateEnd - cTime().Sec(), 0);
+					cTimePrint age(ban.mDateEnd - mTime.Sec(), 0);
 
 					if (mC.notify_kicks_to_all == -1) {
 						ostr << autosprintf(_("User was kicked and banned for %s: %s"), age.AsPeriod().AsString().c_str(), nick.c_str());
@@ -2740,7 +2782,7 @@ string cServerDC::EraseNewLines(const string &src)
 
 void cServerDC::RepBadNickChars(string &nick)
 {
-	string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN));
+	static const string badchars(string(BAD_NICK_CHARS_NMDC) + string(BAD_NICK_CHARS_OWN));
 	size_t pos;
 
 	for (unsigned i = 0; i < badchars.size(); ++i) {
@@ -2791,7 +2833,13 @@ int cServerDC::SetConfig(const char *conf, const char *var, const char *val, str
 			#endif
 
 			if (((svar == "hub_security") || (svar == "opchat_name") || (svar == "hub_security_desc") || (svar == "opchat_desc") || (svar == "cmd_start_op") || (svar == "cmd_start_user")) && (val_new != val_old)) { // take care of special hub configs in real time
-				string speed("\x1"), mail, share("0"), data;
+				string tag, name(HUB_VERSION_NAME), vers(HUB_VERSION_VERS), flag("\x1"), mail, shar("0"), data;
+				tag.reserve(1 + name.size() + 3 + vers.size() + 17);
+				tag.append(1, '<');
+				tag.append(name);
+				tag.append(" V:");
+				tag.append(vers);
+				tag.append(",M:A,H:0/0/1,S:0>");
 
 				if (svar == "hub_security") {
 					if (val_new.empty() || (val_new == mC.opchat_name)) { // dont allow empty or equal to opchat nick
@@ -2799,19 +2847,10 @@ int cServerDC::SetConfig(const char *conf, const char *var, const char *val, str
 						return 0;
 					}
 
-					DelRobot((cMainRobot*)mHubSec);
+					DelRobot((cMainRobot*)mHubSec); // this will send quit to all
 					mHubSec->mNick = val_new;
-					mP.Create_MyINFO(mHubSec->mMyINFO, mHubSec->mNick, mC.hub_security_desc, speed, mail, share, false); // dont reserve for pipe, we are not sending this
-					AddRobot((cMainRobot*)mHubSec);
-					data.reserve(mHubSec->mMyINFO.size() + 1); // send myinfo, first use
-					data = mHubSec->mMyINFO;
-					mUserList.SendToAll(data, mC.delayed_myinfo, true);
-
-					mP.Create_OpList(data, mHubSec->mNick, true); // send short oplist, reserve for pipe
-					mUserList.SendToAll(data, mC.delayed_myinfo, true);
-
-					mP.Create_BotList(data, mHubSec->mNick, true); // send short botlist, reserve for pipe
-					mUserList.SendToAllWithFeature(data, eSF_BOTLIST, mC.delayed_myinfo, true);
+					mP.Create_MyINFO(mHubSec->mMyINFO, mHubSec->mNick, mC.hub_security_desc + tag, flag, mail, shar, false); // dont reserve for pipe, we are not sending this
+					AddRobot((cMainRobot*)mHubSec); // note: this will show user to all
 
 					#ifndef WITHOUT_PLUGINS
 						data.clear();
@@ -2826,7 +2865,7 @@ int cServerDC::SetConfig(const char *conf, const char *var, const char *val, str
 					}
 
 					if (mOpChat)
-						DelRobot((cMainRobot*)mOpChat);
+						DelRobot((cMainRobot*)mOpChat); // this will send quit to all
 
 					if (val_new.size()) {
 						if (mOpChat) {
@@ -2836,17 +2875,9 @@ int cServerDC::SetConfig(const char *conf, const char *var, const char *val, str
 							mOpChat->mClass = tUserCl(10);
 						}
 
-						mP.Create_MyINFO(mOpChat->mMyINFO, mOpChat->mNick, mC.opchat_desc, speed, mail, share, false); // dont reserve for pipe, we are not sending this
-						AddRobot((cMainRobot*)mOpChat);
-						data.reserve(mOpChat->mMyINFO.size() + 1); // send myinfo, first use
-						data = mOpChat->mMyINFO;
-						mUserList.SendToAll(data, mC.delayed_myinfo, true);
+						mP.Create_MyINFO(mOpChat->mMyINFO, mOpChat->mNick, mC.opchat_desc + tag, flag, mail, shar, false); // dont reserve for pipe, we are not sending this
+						AddRobot((cMainRobot*)mOpChat); // note: this will show user to all
 
-						mP.Create_OpList(data, mOpChat->mNick, true); // send short oplist, reserve for pipe
-						mUserList.SendToAll(data, mC.delayed_myinfo, true);
-
-						mP.Create_BotList(data, mOpChat->mNick, true); // send short botlist, reserve for pipe
-						mUserList.SendToAllWithFeature(data, eSF_BOTLIST, mC.delayed_myinfo, true);
 					} else if (mOpChat) {
 						delete mOpChat;
 						mOpChat = NULL;
@@ -2859,15 +2890,15 @@ int cServerDC::SetConfig(const char *conf, const char *var, const char *val, str
 					#endif
 
 				} else if (svar == "hub_security_desc") {
-					mP.Create_MyINFO(mHubSec->mMyINFO, mHubSec->mNick, val_new, speed, mail, share, false); // send myinfo, dont reserve for pipe, we are not sending this
+					mP.Create_MyINFO(mHubSec->mMyINFO, mHubSec->mNick, val_new + tag, flag, mail, shar, false); // send new myinfo, dont reserve for pipe, we are not sending this
 					data.reserve(mHubSec->mMyINFO.size() + 1); // first use, reserve for pipe
 					data = mHubSec->mMyINFO;
 					mUserList.SendToAll(data, mC.delayed_myinfo, true);
 
 				} else if (svar == "opchat_desc") {
 					if (mOpChat) {
-						mP.Create_MyINFO(mOpChat->mMyINFO, mOpChat->mNick, val_new, speed, mail, share, false); // send myinfo, dont reserve for pipe, we are not sending this
-						data.reserve(mHubSec->mMyINFO.size() + 1); // first use, reserve for pipe
+						mP.Create_MyINFO(mOpChat->mMyINFO, mOpChat->mNick, val_new + tag, flag, mail, shar, false); // send new myinfo, dont reserve for pipe, we are not sending this
+						data.reserve(mOpChat->mMyINFO.size() + 1); // first use, reserve for pipe
 						data = mOpChat->mMyINFO;
 						mUserList.SendToAll(data, mC.delayed_myinfo, true);
 					}
@@ -2976,38 +3007,33 @@ int cServerDC::SetConfig(const char *conf, const char *var, const char *val, str
 
 	string fake;
 	ci = new cConfigItemBaseString(fake, var);
+	bool load = mSetupList.LoadItem(conf, ci);
 
-	if (ci) {
-		bool load = mSetupList.LoadItem(conf, ci);
+	if (load)
+		ci->ConvertTo(val_old);
 
-		if (load)
-			ci->ConvertTo(val_old);
+	ci->ConvertFrom(val_new);
+	ci->ConvertTo(val_new);
+	bool save = true;
 
-		ci->ConvertFrom(val_new);
-		ci->ConvertTo(val_new);
-		bool save = true;
+	#ifndef WITHOUT_PLUGINS
+		save = mCallBacks.mOnSetConfig.CallAll((user ? user : mHubSec), &sconf, &svar, &val_new, &val_old, (load ? ci->GetTypeID() : -1));
+	#endif
 
-		#ifndef WITHOUT_PLUGINS
-			save = mCallBacks.mOnSetConfig.CallAll((user ? user : mHubSec), &sconf, &svar, &val_new, &val_old, (load ? ci->GetTypeID() : -1));
-		#endif
+	if (save)
+		mSetupList.SaveItem(conf, ci);
 
-		if (save)
-			mSetupList.SaveItem(conf, ci);
-
-		delete ci;
-		ci = NULL;
-		return int(save);
-	}
-
-	return -3;
+	delete ci;
+	ci = NULL;
+	return int(save);
 }
 
 char* cServerDC::GetConfig(const char *conf, const char *var, const char *def)
 {
-	char *ret = NULL;
+	char *ret = NULL; // note: caller must free non null values returned by getconfig
 
 	if (def)
-		ret = strdup(def); // caller must free non null values returned by getconfig
+		ret = strdup(def);
 
 	if (!conf || !var)
 		return ret;
@@ -3020,7 +3046,10 @@ char* cServerDC::GetConfig(const char *conf, const char *var, const char *def)
 
 		if (ci) {
 			ci->ConvertTo(val);
-			if (ret) free(ret);
+
+			if (ret)
+				free(ret);
+
 			return strdup(val.c_str());
 		} else {
 			if (ErrLog(1))
@@ -3032,20 +3061,19 @@ char* cServerDC::GetConfig(const char *conf, const char *var, const char *def)
 
 	string fake;
 	ci = new cConfigItemBaseString(fake, var);
+	bool load = mSetupList.LoadItem(conf, ci);
 
-	if (ci) {
-		bool load = mSetupList.LoadItem(conf, ci);
+	if (load)
+		ci->ConvertTo(val);
 
-		if (load)
-			ci->ConvertTo(val);
+	delete ci;
+	ci = NULL;
 
-		delete ci;
-		ci = NULL;
+	if (load) {
+		if (ret)
+			free(ret);
 
-		if (load) {
-			if (ret) free(ret);
-			return strdup(val.c_str());
-		}
+		return strdup(val.c_str());
 	}
 
 	return ret;
@@ -3116,15 +3144,11 @@ void cServerDC::DoStackTrace()
 
 	cHTTPConn *http = new cHTTPConn(CRASH_SERV_ADDR, CRASH_SERV_PORT); // try to send via http
 
-	if (!http || !http->mGood) {
+	if (!http->mGood) {
 		vhErr(0) << "Failed connecting to crash server, please send above stack backtrace here: https://github.com/verlihub/verlihub/issues" << endl;
-
-		if (http) {
-			http->Close();
-			delete http;
-			http = NULL;
-		}
-
+		http->Close();
+		delete http;
+		http = NULL;
 		return;
 	}
 
@@ -3227,7 +3251,18 @@ void cServerDC::CtmToHubClearList()
 	mCtmToHubList.clear();
 }
 
-void cServerDC::Reload()
+void cServerDC::SyncStop()
+{
+	DCPublicHSToAll(_("Please note, hub will be stopped now."), false);
+	this->stop(0);
+}
+
+void cServerDC::SyncReload()
+{
+	mReloadNow = true;
+}
+
+void cServerDC::ReloadNow()
 {
 	mC.Load();
 	mCo->mTriggers->ReloadAll();
@@ -3241,6 +3276,12 @@ void cServerDC::Reload()
 		mPenList->UpdateCache();
 
 	this->mMaxMindDB->ReloadAll(); // reload maxminddb
+
+	if (mReloadNow) {
+		const string info(_("Done reloading all lists and databases."));
+		DCPublicToAll(mC.hub_security, info, int(eUC_ADMIN), int(eUC_MASTER), false); // send to class 5 and 10, no delay
+		mReloadNow = false; // reset flag
+	}
 }
 
 	}; // namespace nServer

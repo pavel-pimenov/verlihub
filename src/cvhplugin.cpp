@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -33,7 +33,7 @@ cVHPlugin::cVHPlugin():
 	mRobots(false, false, false)
 {
 	mServer = 0;
-	mUserDataTable = NULL;
+	//mUserDataTable = NULL;
 }
 
 cVHPlugin::~cVHPlugin()
@@ -45,10 +45,12 @@ cVHPlugin::~cVHPlugin()
 		++it;
 		DelRobot(robot);
 	}
+	/*
 	if (mUserDataTable) {
 		delete mUserDataTable;
 		mUserDataTable = NULL;
 	}
+	*/
 }
 
 bool cVHPlugin::AddRobot(cUserRobot *robot)
@@ -64,25 +66,29 @@ bool cVHPlugin::AddRobot(cUserRobot *robot)
 	return true;
 }
 
-cPluginRobot * cVHPlugin::NewRobot(const string &Nick, int uclass)
+cPluginRobot* cVHPlugin::NewRobot(const string &nick, const int clas, const string &info)
 {
-	cPluginRobot *robot = new cPluginRobot(Nick, this, mServer);
-	//set class before adding to list, otherwise user can't be op
-	robot->mClass = tUserCl(uclass);
-	if (AddRobot(robot))
+	cPluginRobot *robot = new cPluginRobot(nick, this, mServer);
+	robot->mClass = tUserCl(clas); //set class and myinfo before adding to list, so server can show user to all
+	robot->mMyINFO.reserve(info.size());
+	robot->mMyINFO = info;
+
+	if (AddRobot(robot)) {
 		return robot;
-	else {
+	} else {
 		delete robot;
+		robot = NULL;
 		return NULL;
 	}
 }
 
 bool cVHPlugin::DelRobot(cUserRobot *robot)
 {
-	bool result = mRobots.Remove(robot);
+	const bool res = mRobots.Remove(robot);
 	mServer->DelRobot(robot);
 	delete robot;
-	return result;
+	robot = NULL;
+	return res;
 }
 
 bool cVHPlugin::AddScript(const string &filename, ostream &os)
@@ -97,6 +103,7 @@ bool cVHPlugin::LoadScript(const string &filename, ostream &os)
 	return false;
 }
 
+/*
 cPluginUserData *cVHPlugin::GetPluginUserData( cUser * User )
 {
 	if (mUserDataTable) {
@@ -118,6 +125,7 @@ cPluginUserData *cVHPlugin::SetPluginUserData( cUser *User, cPluginUserData *New
 	mUserDataTable->SetByHash(Hash, NewData);
 	return OldData;
 }
+*/
 
 	}; // namespace nPlugin
 }; // namespace nVerliHub

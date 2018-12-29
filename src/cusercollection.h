@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -21,6 +21,7 @@
 #ifndef NDIRECTCONNECTCUSERCOLLECTION_H
 #define NDIRECTCONNECTCUSERCOLLECTION_H
 
+/*
 #if defined _WIN32
 namespace std {
 	inline unsigned long _Atomic_swap(unsigned long * __p, unsigned long __q)
@@ -33,6 +34,7 @@ namespace std {
 	}
 };
 #endif
+*/
 
 #include <string>
 #include <functional>
@@ -333,7 +335,7 @@ public:
 	void SendToAllWithFeature(string &data, const unsigned feature, const bool cache, const bool pipe);
 	void SendToAllWithClassFeature(string &data, const int min_class, const int max_class, const unsigned feature, const bool cache, const bool pipe);
 	void FlushCache();
-	void FlushForUser(cUserBase *user);
+	//void FlushForUser(cUserBase *user);
 
 	virtual void OnAdd(cUserBase *user)
 	{

@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -21,9 +21,9 @@
 #ifndef SCRIPT_API_H
 #define SCRIPT_API_H
 
-#ifndef _WIN32
+//#ifndef _WIN32
 	#define __int64 long long
-#endif
+//#endif
 
 #include <map>
 #include <string>
@@ -59,7 +59,7 @@ namespace nVerliHub {
 	bool SetConfig(const char *conf, const char *var, const char *val);
 	char* GetConfig(const char *conf, const char *var, const char *def = NULL);
 	const char* GetVHCfgDir();
-	bool GetTempRights(const char *nick, map<string,int> &rights);
+	//bool GetTempRights(const char *nick, map<string,int> &rights);
 	bool AddRegUser(const char *nick, int uclass, const char *pass, const char* op);
 	bool DelRegUser(const char *nick);
 	bool SetRegClass(const char *nick, int clas);

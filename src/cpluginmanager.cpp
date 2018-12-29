@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -43,9 +43,7 @@ cPluginManager::cPluginManager(const string &path):
 }
 
 cPluginManager::~cPluginManager()
-{
-	//this->UnLoadAll();
-}
+{}
 
 bool cPluginManager::LoadAll()
 {
@@ -81,9 +79,9 @@ void cPluginManager::UnLoadAll()
 	tPlugins::iterator it;
 
 	for (it = mPlugins.begin(); it != mPlugins.end(); ++it) {
-		if (*it) {
+		if ((*it) && (*it)->mPlugin && ((*it)->mPlugin->Name() != PLUGMAN_NAME)) {
 			plugs.push_back((*it)->mPlugin->Name());
-			this->UnloadPlugin((*it)->mPlugin->Name(), false);
+			this->UnloadPlugin((*it)->mPlugin->Name(), false); // todo: temporary bug workaround
 		}
 	}
 
@@ -91,47 +89,53 @@ void cPluginManager::UnLoadAll()
 		for (unsigned int i = 0; i < plugs.size(); i++) {
 			if (!mPlugins.RemoveByHash(mPlugins.Key2Hash(plugs[i]))) {
 				if (ErrLog(2))
-					LogStream() << "Can't unload plugin: " << plugs[i] << endl;
+					LogStream() << "Unable to remove plugin from plugin list: " << plugs[i] << endl;
 			}
 		}
 
 		plugs.clear();
 	}
+
+	this->UnloadPlugin(PLUGMAN_NAME, false); // unload plugman at last because all plugins are most likely loaded via it
+	mPlugins.RemoveByHash(mPlugins.Key2Hash(PLUGMAN_NAME)); // todo: temporary bug workaround
 }
 
 bool cPluginManager::LoadPlugin(const string &file)
 {
-#if ! defined _WIN32
+//#if ! defined _WIN32
 	cPluginLoader *plugin;
 	mLastLoadError = "";
 	if(Log(3))
 		LogStream() << "Attempt loading plugin: " << file << endl;
 	plugin = new cPluginLoader(file);
-	if(!plugin)
-		return false;
+
 	if(!plugin->Open() || !plugin->LoadSym() || !mPlugins.AddWithHash(plugin, mPlugins.Key2Hash(plugin->mPlugin->Name()))) {
 		mLastLoadError = plugin->Error();
 		delete plugin;
+		plugin = NULL;
 		return false;
 	}
 
-	try {
+	try { // used rearely
 		plugin->mPlugin->SetMgr(this);
 		plugin->mPlugin->RegisterAll();
-
 		OnPluginLoad(plugin->mPlugin);
 	} catch (...) {
-		if(ErrLog(1))
+		if (ErrLog(1))
 			LogStream() << "Plugin " << file << " caused an exception" << endl;
 	}
-	if(Log(1))
+
+	if (Log(1))
 		LogStream() << "Succes loading plugin: " << file << endl;
-#endif
+//#endif
 	return true;
 }
 
 bool cPluginManager::UnloadPlugin(const string &name, bool remove)
 {
+	if (Log(0))
+		LogStream() << "Trying to unload plugin: " << name << endl;
+
 	cPluginLoader *plugin = mPlugins.GetByHash(mPlugins.Key2Hash(name));
 
 	if (!plugin) {
@@ -141,7 +145,14 @@ bool cPluginManager::UnloadPlugin(const string &name, bool remove)
 		return false;
 	}
 
-	if (remove && !mPlugins.RemoveByHash(mPlugins.Key2Hash(name))) {
+	if (!plugin->mPlugin) {
+		if (ErrLog(2))
+			LogStream() << "Plugin was not initialized: " << name << endl;
+
+		return false;
+	}
+
+	if (remove && !mPlugins.RemoveByHash(mPlugins.Key2Hash(name))) { // todo: we have a bug here, use workaround above
 		if (ErrLog(2))
 			LogStream() << "Can't unload plugin: " << name << endl;
 
@@ -154,6 +165,11 @@ bool cPluginManager::UnloadPlugin(const string &name, bool remove)
 		(*it)->Unregister(plugin->mPlugin);
 
 	delete plugin;
+	plugin = NULL;
+
+	if (Log(0))
+		LogStream() << "Plugin successfully unloaded: " << name << endl;
+
 	return true;
 }
 

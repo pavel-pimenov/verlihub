@@ -1,6 +1,6 @@
 /*
 	Copyright (C) 2003-2005 Daniel Muller, dan at verliba dot cz
-	Copyright (C) 2006-2018 Verlihub Team, info at verlihub dot net
+	Copyright (C) 2006-2019 Verlihub Team, info at verlihub dot net
 
 	Verlihub is free software; You can redistribute it
 	and modify it under the terms of the GNU General
@@ -41,7 +41,8 @@ cConnDC::cConnDC(int sd, cAsyncSocketServer *server):
 	memset(&mTO, 0, sizeof(mTO));
 	mFeatures = 0;
 	mSendNickList = false;
-	mNickListInProgress = false;
+	//mNickListInProgress = false;
+	//mSkipNickList = false;
 	mConnType = NULL;
 	mCloseReason = 0;
 	SetTimeOut(eTO_LOGIN, Server()->mC.timeout_length[eTO_LOGIN], server->mTime); // default login timeout
@@ -73,6 +74,7 @@ bool cConnDC::SetUser(cUser *usr)
 		if(ErrLog(1))
 			LogStream() << "Trying to add user when it's actually done" << endl;
 		delete usr;
+		usr = NULL;
 		return false;
 	}
 	mpUser = usr;
@@ -113,7 +115,7 @@ int cConnDC::Send(string &data, bool AddPipe, bool Flush)
 	int ret = Write(data, Flush);
 
 	if ((Server()->mTime.Sec() - mTimeLastAttempt.Sec()) >= 2) // delay 2 seconds
-		mTimeLastAttempt.Get();
+		mTimeLastAttempt = Server()->mTime;
 
 	if (ret > 0) { // calculate upload bandwidth in real time
 		SetGeoZone(); // must be called first
@@ -245,12 +247,13 @@ int cConnDC::CheckTimeOut(tTimeOut timeout, cTime &now)
 	return 0 == mTO[timeout].Check(now);
 }
 
+/*
 void cConnDC::OnFlushDone()
 {
-	mBufFlush.erase(0, GetFlushSize());
-	mBufSend.erase(0, GetBufferSize());
-	ShrinkStringToFit(mBufFlush);
-	ShrinkStringToFit(mBufSend);
+	//mBufFlush.erase(0, GetFlushSize()); // all buffers were already resized and shrinked in cAsyncConn::Write(), else i dont understand when this is called or if its called at all
+	//mBufSend.erase(0, GetBufferSize());
+	//ShrinkStringToFit(mBufFlush);
+	//ShrinkStringToFit(mBufSend);
 
 	if (mNickListInProgress) {
 		SetLSFlag(eLS_NICKLST);
@@ -267,6 +270,7 @@ void cConnDC::OnFlushDone()
 		}
 	}
 }
+*/
 
 int cConnDC::OnCloseNice()
 {
@@ -327,9 +331,6 @@ bool cConnDC::CheckProtoFlood(const string &data, int type)
 		return false;
 
 	nVerliHub::cServerDC *serv = (nVerliHub::cServerDC*)mxServer;
-
-	if (!serv)
-		return false;
 
 	if (GetTheoricalClass() > serv->mC.max_class_proto_flood)
 		return false;
@@ -596,12 +597,14 @@ cAsyncConn *cDCConnFactory::CreateConn(tSocket sd)
 
 	cConnDC *conn = new cConnDC(sd, mServer);
 
+	/* todo: use try instead
 	if (!conn) {
 		if (mServer->Log(0))
 			mServer->LogStream() << "Failed to create new connection" << endl;
 
 		return NULL;
 	}
+	*/
 
 	conn->mxMyFactory = this;
 	conn->mxProtocol = mProtocol;
@@ -645,9 +648,7 @@ string cConnDC::GetGeoCC()
 {
 	if (mCC.empty() && mxServer) { // if not set
 		nVerliHub::cServerDC *serv = (nVerliHub::cServerDC*)mxServer;
-
-		if (serv)
-			serv->mMaxMindDB->GetCCC(mCC, mCN, mCity, AddrIP()); // lookup all at once
+		serv->mMaxMindDB->GetCCC(mCC, mCN, mCity, AddrIP()); // lookup all at once
 	}
 
 	return mCC;
@@ -657,9 +658,7 @@ string cConnDC::GetGeoCN()
 {
 	if (mCN.empty() && mxServer) { // if not set
 		nVerliHub::cServerDC *serv = (nVerliHub::cServerDC*)mxServer;
-
-		if (serv)
-			serv->mMaxMindDB->GetCCC(mCC, mCN, mCity, AddrIP()); // lookup all at once
+		serv->mMaxMindDB->GetCCC(mCC, mCN, mCity, AddrIP()); // lookup all at once
 	}
 
 	return mCN;
@@ -669,9 +668,7 @@ string cConnDC::GetGeoCI()
 {
 	if (mCity.empty() && mxServer) { // if not set
 		nVerliHub::cServerDC *serv = (nVerliHub::cServerDC*)mxServer;
-
-		if (serv)
-			serv->mMaxMindDB->GetCCC(mCC, mCN, mCity, AddrIP()); // lookup all at once
+		serv->mMaxMindDB->GetCCC(mCC, mCN, mCity, AddrIP()); // lookup all at once
 	}
 
 	return mCity;
@@ -688,12 +685,6 @@ void cConnDC::SetGeoZone()
 	}
 
 	nVerliHub::cServerDC *serv = (nVerliHub::cServerDC*)mxServer;
-
-	if (!serv) {
-		mGeoZone = 0;
-		return;
-	}
-
 	string cc;
 
 	for (unsigned int pos = 0; pos < 3; pos++) {
