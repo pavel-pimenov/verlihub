@@ -19,6 +19,7 @@
 */
 
 #include "cconnchoose.h"
+#include <syslog.h>
 
 namespace nVerliHub {
 	using namespace nEnums;
@@ -63,6 +64,7 @@ bool cConnChoose::HasConn(cConnBase *conn)
 
 inline cConnBase * cConnChoose::operator[] (tSocket sock)
 {
+	syslog(LOG_INFO,"connChoose[] [%d]", sock);
 	return mConnList.GetByHash(sock);
 }
 
@@ -70,6 +72,7 @@ inline cConnBase * cConnChoose::operator[] (tSocket sock)
 
 bool cConnChoose::AddConn(cConnBase *conn)
 {
+	syslog(LOG_INFO,"AddCon [%p]", conn);
 	if ( conn == NULL ) return false;
 	tSocket sock = (tSocket)(*conn);
 	// resize
@@ -85,6 +88,7 @@ bool cConnChoose::AddConn(cConnBase *conn)
 
 bool cConnChoose::DelConn(cConnBase *conn)
 {
+	syslog(LOG_INFO,"DelCon [%p]", conn);
 	tSocket sock = (tSocket)(*conn);
 	if ( (tSocket)mConnList.size() <= sock ) return false;
 	OptOut(conn, eCC_ALL);
@@ -95,6 +99,7 @@ bool cConnChoose::DelConn(cConnBase *conn)
 
 bool cConnChoose::HasConn(cConnBase *conn)
 {
+	syslog(LOG_INFO,"HasConn [%p]", conn);
 	tSocket sock = (tSocket)(*conn);
 	if ( (tSocket)mConnList.size() <= sock ) return false;
 	return mConnList[sock] != NULL;
@@ -102,6 +107,8 @@ bool cConnChoose::HasConn(cConnBase *conn)
 
 inline cConnBase * cConnChoose::operator[] (tSocket sock)
 {
+	syslog(LOG_INFO,"connChoose[] [%d]", sock);
+
 	if(tSocket(mConnList.size()) > sock)
 		return mConnList[sock];
 	else
