@@ -4375,7 +4375,7 @@ void cDCProto::Create_SA(string &dest, const string &tth, const string &addr, co
 	if (dest.size())
 		dest.clear();
 
-	if (dest.capacity() < (4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0)))
+	if (dest.capacity() <= (4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0)))
 		dest.reserve(4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0));
 
 	dest.append("$SA ");
@@ -4386,10 +4386,11 @@ void cDCProto::Create_SA(string &dest, const string &tth, const string &addr, co
 
 void cDCProto::Create_SP(string &dest, const string &tth, const string &nick, const bool pipe)
 {
+
 	if (dest.size())
 		dest.clear();
-
-	if (dest.capacity() < (4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0)))
+		
+	if (dest.capacity() <= (4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0)))
 		dest.reserve(4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0));
 
 	dest.append("$SP ");
