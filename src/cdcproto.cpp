@@ -4353,10 +4353,10 @@ void cDCProto::Create_Search(string &dest, const string &addr, const string &tth
 		dest.clear();
 
 	if (pas) {
-		if (dest.capacity() < (8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
+		if (dest.capacity() <= (8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
 			dest.reserve(8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0));
 	} else {
-		if (dest.capacity() < (8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
+		if (dest.capacity() <= (8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
 			dest.reserve(8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0));
 	}
 
