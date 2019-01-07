@@ -4337,7 +4337,7 @@ void cDCProto::Create_Search(string &dest, const string &addr, const string &lim
 	if (dest.size())
 		dest.clear();
 
-	if (dest.capacity() < (8 + addr.size() + 1 + lims.size() + spat.size() + (pipe ? 1 : 0)))
+	if (dest.capacity() <= (8 + addr.size() + 1 + lims.size() + spat.size() + (pipe ? 1 : 0)))
 		dest.reserve(8 + addr.size() + 1 + lims.size() + spat.size() + (pipe ? 1 : 0));
 
 	dest.append("$Search ");
@@ -4352,13 +4352,25 @@ void cDCProto::Create_Search(string &dest, const string &addr, const string &tth
 	if (dest.size())
 		dest.clear();
 
+        syslog(LOG_INFO,"[1] + reserve +1 send data=[%s][capacity=%d size= %d] pipe = %d", dest.c_str(), dest.capacity(), dest.size(), int(pipe));
+
 	if (pas) {
-		if (dest.capacity() <= (8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
-			dest.reserve(8 + 4 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0));
+		if (dest.capacity() <= (8 + 4 + addr.size() + 13 + tth.size() + 2))
+		{
+			dest.reserve(8 + 4 + addr.size() + 13 + tth.size() + 1);
+		        syslog(LOG_INFO,"[1.1] + reserve +1 send data=[%s][capacity=%d size= %d]", dest.c_str(), dest.capacity(), dest.size());
+
+		}
 	} else {
-		if (dest.capacity() <= (8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0)))
-			dest.reserve(8 + addr.size() + 13 + tth.size() + (pipe ? 1 : 0));
+		if (dest.capacity() <= (8 + addr.size() + 13 + tth.size() + 2))
+		{
+			dest.reserve(8 + addr.size() + 13 + tth.size() + 1);
+		        syslog(LOG_INFO,"[1.2] + reserve +1 send data=[%s][capacity=%d size= %d]", dest.c_str(), dest.capacity(), dest.size());
+
+		}
 	}
+
+        syslog(LOG_INFO,"[2] + reserve +1 send data=[%s][capacity=%d size= %d]", dest.c_str(), dest.capacity(), dest.size());
 
 	dest.append("$Search ");
 
@@ -4368,6 +4380,7 @@ void cDCProto::Create_Search(string &dest, const string &addr, const string &tth
 	dest.append(addr);
 	dest.append(" F?T?0?9?TTH:"); // note: taken from dc++ behaviour but nmdc specification says following: is_max_size is F if size_restricted is F
 	dest.append(tth);
+        syslog(LOG_INFO,"[3] + reserve +1 send data=[%s][capacity=%d size= %d]" , dest.c_str(), dest.capacity(), dest.size());
 }
 
 void cDCProto::Create_SA(string &dest, const string &tth, const string &addr, const bool pipe)
@@ -4375,8 +4388,7 @@ void cDCProto::Create_SA(string &dest, const string &tth, const string &addr, co
 	if (dest.size())
 		dest.clear();
 
-	if (dest.capacity() <= (4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0)))
-		dest.reserve(4 + tth.size() + 1 + addr.size() + (pipe ? 1 : 0));
+	dest.reserve(4 + tth.size() + 1 + addr.size() + 2);
 
 	dest.append("$SA ");
 	dest.append(tth);
@@ -4390,9 +4402,7 @@ void cDCProto::Create_SP(string &dest, const string &tth, const string &nick, co
 	if (dest.size())
 		dest.clear();
 		
-	if (dest.capacity() <= (4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0)))
-		dest.reserve(4 + tth.size() + 1 + nick.size() + (pipe ? 1 : 0));
-
+	dest.reserve(4 + tth.size() + 1 + nick.size() + 2);
 	dest.append("$SP ");
 	dest.append(tth);
 	dest.append(1, ' ');
